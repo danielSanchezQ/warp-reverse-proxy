@@ -78,6 +78,7 @@ async fn proxy_to(proxy_address: String, request: Request) -> reqwest::Response 
 pub mod test {
     use crate::{extract_request_data_filter, proxy_to, reverse_proxy_filter, Request};
     use std::net::SocketAddr;
+    use tokio::time::Duration;
     use warp::Filter;
 
     fn serve_test_response(address: SocketAddr) {
@@ -130,6 +131,8 @@ pub mod test {
         let address = ([127, 0, 0, 1], 4040);
         serve_test_response(address.into());
 
+        tokio::task::yield_now().await;
+
         let response = proxy_to("http://127.0.0.1:4040".to_string(), request).await;
         assert_eq!(response.status(), http::status::StatusCode::OK);
     }
@@ -147,6 +150,7 @@ pub mod test {
         );
 
         serve_test_response(address.into());
+        tokio::task::yield_now().await;
 
         let response = warp::test::request()
             .path(path)
