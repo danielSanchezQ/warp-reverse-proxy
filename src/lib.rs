@@ -1,10 +1,10 @@
 use http::{HeaderMap, Method};
+use warp::filters::path::FullPath;
 use warp::filters::BoxedFilter;
 use warp::hyper::body::Bytes;
-use warp::path::Peek;
 use warp::{Filter, Rejection, Reply};
 
-type Request = (Peek, Method, HeaderMap, Bytes);
+type Request = (FullPath, Method, HeaderMap, Bytes);
 
 /// Reverse proxy filter: It forwards the request to the desired location. It maps one to one, meaning
 /// that a request to `https://www.bar.foo/handle/this/path` forwarding to `https://www.other.location`
@@ -26,7 +26,7 @@ pub fn reverse_proxy_filter(
 /// Warp filter that extracts the relative request path, method, headers map and body of a request.
 pub fn extract_request_data_filter(
 ) -> impl Filter<Extract = Request, Error = warp::Rejection> + Clone {
-    warp::path::peek()
+    warp::path::full()
         .and(warp::method())
         .and(warp::header::headers_cloned())
         .and(warp::body::bytes())
@@ -36,7 +36,7 @@ pub fn extract_request_data_filter(
 /// warp::reply compatible type (`http::Response`)
 async fn proxy_to_and_forward_response(
     proxy_address: String,
-    uri: Peek,
+    uri: FullPath,
     method: Method,
     headers: HeaderMap,
     body: Bytes,
@@ -60,11 +60,12 @@ async fn response_to_reply(response: reqwest::Response) -> http::Response<Bytes>
 /// Build and send a request to the specified address and request data
 async fn proxy_to(proxy_address: String, request: Request) -> reqwest::Response {
     let (uri, method, headers, body) = request;
+
     let client = reqwest::Client::new();
     let request = client
         .request(
             method,
-            format!("{}/{}", proxy_address, uri.as_str()).as_str(),
+            format!("{}{}", proxy_address, uri.as_str()).as_str(),
         )
         .headers(headers)
         .body(body)
@@ -100,7 +101,7 @@ pub mod test {
 
         let (result_path, result_method, result_headers, result_body): Request = result.unwrap();
 
-        assert_eq!(path, format!("/{}", result_path.as_str()).as_str());
+        assert_eq!(path, result_path.as_str());
         assert_eq!(method, result_method.as_str());
         assert_eq!(bytes::Bytes::from(body.to_vec()), result_body);
         assert_eq!(result_headers.get(header.0).unwrap(), header.1);
@@ -109,10 +110,9 @@ pub mod test {
     #[tokio::test]
     async fn proxy_forward_response() {
         let filter = extract_request_data_filter();
-        let address = ([127, 0, 0, 1], 3030);
         let (path, method, body, header) = (
             "http://127.0.0.1:3030/foo/bar",
-            "POST",
+            "GET",
             b"foo bar",
             ("foo", "bar"),
         );
@@ -127,9 +127,10 @@ pub mod test {
 
         let request: Request = result.unwrap();
 
+        let address = ([127, 0, 0, 1], 4040);
         serve_test_response(address.into());
 
-        let response = proxy_to(path.to_string(), request).await;
+        let response = proxy_to("http://127.0.0.1:4040".to_string(), request).await;
         assert_eq!(response.status(), http::status::StatusCode::OK);
     }
 
@@ -140,7 +141,7 @@ pub mod test {
         let address = ([127, 0, 0, 1], 3030);
         let (path, method, body, header) = (
             "https://127.0.0.1:3030/foo/bar",
-            "POST",
+            "GET",
             b"foo bar",
             ("foo", "bar"),
         );
