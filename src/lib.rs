@@ -11,12 +11,15 @@ type Request = (FullPath, Method, HeaderMap, Bytes);
 /// will result in a request to `https://www.other.location/handle/this/path`.
 pub fn reverse_proxy_filter(
     root: BoxedFilter<()>,
+    base_path: String,
     proxy_address: String,
 ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     let proxy_address = warp::any().map(move || proxy_address.clone());
+    let base_path = warp::any().map(move || base_path.clone());
     let data_filter = extract_request_data_filter();
     root.and(
         proxy_address
+            .and(base_path)
             .and(data_filter)
             .and_then(proxy_to_and_forward_response),
     )
@@ -36,12 +39,17 @@ pub fn extract_request_data_filter(
 /// warp::reply compatible type (`http::Response`)
 async fn proxy_to_and_forward_response(
     proxy_address: String,
+    mut base_path: String,
     uri: FullPath,
     method: Method,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<impl Reply, Rejection> {
-    let response = proxy_to(proxy_address, (uri, method, headers, body)).await;
+    if !base_path.starts_with('/') {
+        base_path = format!("/{}", base_path);
+    }
+    let request = filtered_data_to_request(proxy_address, base_path, (uri, method, headers, body));
+    let response = proxy_to(request).await;
     Ok(response_to_reply(response).await)
 }
 
@@ -57,33 +65,45 @@ async fn response_to_reply(response: reqwest::Response) -> http::Response<Bytes>
         .unwrap()
 }
 
-/// Build and send a request to the specified address and request data
-async fn proxy_to(proxy_address: String, request: Request) -> reqwest::Response {
+fn filtered_data_to_request(
+    proxy_address: String,
+    base_path: String,
+    request: Request,
+) -> reqwest::Request {
     let (uri, method, headers, body) = request;
-
+    let relative_path = uri.as_str().trim_start_matches(&base_path);
     let client = reqwest::Client::new();
-    let request = client
-        .request(
-            method,
-            format!("{}{}", proxy_address, uri.as_str()).as_str(),
-        )
+    let proxy_uri = format!("{}{}", proxy_address, relative_path);
+    println!("{}", &proxy_uri);
+    client
+        .request(method, &proxy_uri)
         .headers(headers)
         .body(body)
         .build()
-        .unwrap();
+        .unwrap()
+}
+
+/// Build and send a request to the specified address and request data
+async fn proxy_to(request: reqwest::Request) -> reqwest::Response {
+    let client = reqwest::Client::new();
     client.execute(request).await.unwrap()
 }
 
 #[cfg(test)]
 pub mod test {
-    use crate::{extract_request_data_filter, proxy_to, reverse_proxy_filter, Request};
+    use crate::{
+        extract_request_data_filter, filtered_data_to_request, proxy_to, reverse_proxy_filter,
+        Request,
+    };
     use std::net::SocketAddr;
-    use tokio::time::Duration;
     use warp::Filter;
 
-    fn serve_test_response(address: SocketAddr) {
-        let app = warp::any().map(warp::reply);
-        tokio::spawn(warp::serve(app).run(address));
+    fn serve_test_response(path: String, address: SocketAddr) {
+        if path.is_empty() {
+            tokio::spawn(warp::serve(warp::any().map(warp::reply)).run(address));
+        } else {
+            tokio::spawn(warp::serve(warp::path(path).map(warp::reply)).run(address));
+        }
     }
 
     #[tokio::test]
@@ -129,27 +149,33 @@ pub mod test {
         let request: Request = result.unwrap();
 
         let address = ([127, 0, 0, 1], 4040);
-        serve_test_response(address.into());
+        serve_test_response("".to_string(), address.into());
 
         tokio::task::yield_now().await;
-
-        let response = proxy_to("http://127.0.0.1:4040".to_string(), request).await;
+        // transform request data into an actual request
+        let request =
+            filtered_data_to_request("http://127.0.0.1:4040".to_string(), "".to_string(), request);
+        let response = proxy_to(request).await;
         assert_eq!(response.status(), http::status::StatusCode::OK);
     }
 
     #[tokio::test]
     async fn full_reverse_proxy_filter_forward_response() {
         let address_str = "http://127.0.0.1:3030";
-        let filter = reverse_proxy_filter(warp::any().boxed(), address_str.to_string());
+        let filter = reverse_proxy_filter(
+            warp::path!("relative_path" / ..).boxed(),
+            "relative_path".to_string(),
+            address_str.to_string(),
+        );
         let address = ([127, 0, 0, 1], 3030);
         let (path, method, body, header) = (
-            "https://127.0.0.1:3030/foo/bar",
+            "https://127.0.0.1:3030/relative_path/foo",
             "GET",
             b"foo bar",
             ("foo", "bar"),
         );
 
-        serve_test_response(address.into());
+        serve_test_response("foo".to_string(), address.into());
         tokio::task::yield_now().await;
 
         let response = warp::test::request()
