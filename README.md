@@ -21,6 +21,7 @@ async fn main() {
     // Forward request to localhost in other port
     let app = reverse_proxy_filter(
         warp::path!("hello" / ..).boxed(),
+        "".to_string(),
         "http://127.0.0.1:8080".to_string(),
     );
 
