@@ -45,7 +45,7 @@ async fn proxy_to_and_forward_response(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<impl Reply, Rejection> {
-    if !base_path.starts_with("/") {
+    if !base_path.starts_with('/') {
         base_path = format!("/{}", base_path);
     }
     let request = filtered_data_to_request(proxy_address, base_path, (uri, method, headers, body));
