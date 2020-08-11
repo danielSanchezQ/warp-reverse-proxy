@@ -2,7 +2,7 @@ use http::{HeaderMap, Method};
 use warp::filters::path::FullPath;
 use warp::filters::BoxedFilter;
 use warp::hyper::body::Bytes;
-use warp::{Filter, Rejection, Reply};
+use warp::{Filter, Rejection};
 
 type Request = (FullPath, Method, HeaderMap, Bytes);
 
@@ -13,7 +13,7 @@ pub fn reverse_proxy_filter(
     root: BoxedFilter<()>,
     base_path: String,
     proxy_address: String,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+) -> impl Filter<Extract = (http::Response<Bytes>,), Error = Rejection> + Clone {
     let proxy_address = warp::any().map(move || proxy_address.clone());
     let base_path = warp::any().map(move || base_path.clone());
     let data_filter = extract_request_data_filter();
@@ -44,12 +44,12 @@ async fn proxy_to_and_forward_response(
     method: Method,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<impl Reply, Rejection> {
+) -> Result<http::Response<Bytes>, Rejection> {
     if !base_path.starts_with('/') {
         base_path = format!("/{}", base_path);
     }
     let request = filtered_data_to_request(proxy_address, base_path, (uri, method, headers, body));
-    let response = proxy_to(request).await;
+    let response = proxy_request(request).await;
     Ok(response_to_reply(response).await)
 }
 
@@ -84,7 +84,7 @@ fn filtered_data_to_request(
 }
 
 /// Build and send a request to the specified address and request data
-async fn proxy_to(request: reqwest::Request) -> reqwest::Response {
+async fn proxy_request(request: reqwest::Request) -> reqwest::Response {
     let client = reqwest::Client::new();
     client.execute(request).await.unwrap()
 }
@@ -92,7 +92,7 @@ async fn proxy_to(request: reqwest::Request) -> reqwest::Response {
 #[cfg(test)]
 pub mod test {
     use crate::{
-        extract_request_data_filter, filtered_data_to_request, proxy_to, reverse_proxy_filter,
+        extract_request_data_filter, filtered_data_to_request, proxy_request, reverse_proxy_filter,
         Request,
     };
     use std::net::SocketAddr;
@@ -155,7 +155,7 @@ pub mod test {
         // transform request data into an actual request
         let request =
             filtered_data_to_request("http://127.0.0.1:4040".to_string(), "".to_string(), request);
-        let response = proxy_to(request).await;
+        let response = proxy_request(request).await;
         assert_eq!(response.status(), http::status::StatusCode::OK);
     }
 
