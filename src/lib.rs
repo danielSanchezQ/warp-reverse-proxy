@@ -1,6 +1,5 @@
 use http::{HeaderMap, Method};
 use warp::filters::path::FullPath;
-use warp::filters::BoxedFilter;
 use warp::hyper::body::Bytes;
 use warp::{Filter, Rejection};
 
@@ -10,20 +9,18 @@ type Request = (FullPath, Method, HeaderMap, Bytes);
 /// that a request to `https://www.bar.foo/handle/this/path` forwarding to `https://www.other.location`
 /// will result in a request to `https://www.other.location/handle/this/path`.
 pub fn reverse_proxy_filter(
-    root: BoxedFilter<()>,
     base_path: String,
     proxy_address: String,
 ) -> impl Filter<Extract = (http::Response<Bytes>,), Error = Rejection> + Clone {
     let proxy_address = warp::any().map(move || proxy_address.clone());
     let base_path = warp::any().map(move || base_path.clone());
     let data_filter = extract_request_data_filter();
-    root.and(
-        proxy_address
-            .and(base_path)
-            .and(data_filter)
-            .and_then(proxy_to_and_forward_response),
-    )
-    .boxed()
+
+    proxy_address
+        .and(base_path)
+        .and(data_filter)
+        .and_then(proxy_to_and_forward_response)
+        .boxed()
 }
 
 /// Warp filter that extracts the relative request path, method, headers map and body of a request.
@@ -71,10 +68,16 @@ fn filtered_data_to_request(
     request: Request,
 ) -> reqwest::Request {
     let (uri, method, headers, body) = request;
-    let relative_path = uri.as_str().trim_start_matches(&base_path);
+
+    let relative_path = uri
+        .as_str()
+        .trim_start_matches(&base_path)
+        .trim_start_matches('/');
+
+    let proxy_address = proxy_address.trim_end_matches('/');
+    let proxy_uri = format!("{}/{}", proxy_address, relative_path);
+
     let client = reqwest::Client::new();
-    let proxy_uri = format!("{}{}", proxy_address, relative_path);
-    println!("{}", &proxy_uri);
     client
         .request(method, &proxy_uri)
         .headers(headers)
@@ -162,11 +165,10 @@ pub mod test {
     #[tokio::test]
     async fn full_reverse_proxy_filter_forward_response() {
         let address_str = "http://127.0.0.1:3030";
-        let filter = reverse_proxy_filter(
-            warp::path!("relative_path" / ..).boxed(),
+        let filter = warp::path!("relative_path" / ..).and(reverse_proxy_filter(
             "relative_path".to_string(),
             address_str.to_string(),
-        );
+        ));
         let address = ([127, 0, 0, 1], 3030);
         let (path, method, body, header) = (
             "https://127.0.0.1:3030/relative_path/foo",
