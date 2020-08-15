@@ -1,8 +1,9 @@
-use http::{HeaderMap, Method};
+use http::{HeaderMap, HeaderValue, Method};
+use lazy_static::lazy_static;
+use unicase::Ascii;
 use warp::filters::path::FullPath;
 use warp::hyper::body::Bytes;
 use warp::{Filter, Rejection};
-
 type Request = (FullPath, Method, HeaderMap, Bytes);
 
 /// Reverse proxy filter: It forwards the request to the desired location. It maps one to one, meaning
@@ -53,13 +54,45 @@ async fn proxy_to_and_forward_response(
 /// Converts a reqwest response into a http:Response
 async fn response_to_reply(response: reqwest::Response) -> http::Response<Bytes> {
     let mut builder = http::Response::builder();
-    for (k, v) in response.headers() {
+    for (k, v) in remove_hop_headers(response.headers()).iter() {
         builder = builder.header(k, v);
     }
     builder
         .status(response.status())
         .body(response.bytes().await.unwrap())
         .unwrap()
+}
+
+/// Checker method to filter hop headers
+/// Headers are checked using unicase to avoid case misfunctions
+fn is_hop_header(header_name: &str) -> bool {
+    lazy_static! {
+        static ref HOP_HEADERS: Vec<Ascii<&'static str>> = vec![
+            Ascii::new("Connection"),
+            Ascii::new("Keep-Alive"),
+            Ascii::new("Proxy-Authenticate"),
+            Ascii::new("Proxy-Authorization"),
+            Ascii::new("Te"),
+            Ascii::new("Trailers"),
+            Ascii::new("Transfer-Encoding"),
+            Ascii::new("Upgrade"),
+        ];
+    }
+
+    HOP_HEADERS.iter().any(|h| h == &header_name)
+}
+
+fn remove_hop_headers(headers: &HeaderMap<HeaderValue>) -> HeaderMap<HeaderValue> {
+    headers
+        .iter()
+        .filter_map(|(k, v)| {
+            if !is_hop_header(k.as_str()) {
+                Some((k.clone(), v.clone()))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn filtered_data_to_request(
@@ -76,6 +109,8 @@ fn filtered_data_to_request(
 
     let proxy_address = proxy_address.trim_end_matches('/');
     let proxy_uri = format!("{}/{}", proxy_address, relative_path);
+
+    let headers = remove_hop_headers(&headers);
 
     let client = reqwest::Client::new();
     client
