@@ -11,6 +11,9 @@ description = "Warp filter that acts as a reverse proxy, forwarding the request 
 readme = "README.md"
 keywords = ["warp", "proxy", "reverse", "filter"]
 categories = ["web-programming", "web-programming::http-server"]
+exclude = [
+    ".github",
+]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
