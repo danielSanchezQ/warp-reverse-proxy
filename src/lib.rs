@@ -4,7 +4,7 @@ use unicase::Ascii;
 use warp::filters::path::FullPath;
 use warp::hyper::body::Bytes;
 use warp::{Filter, Rejection};
-type Request = (FullPath, Method, HeaderMap, Bytes);
+pub type Request = (FullPath, Method, HeaderMap, Bytes);
 
 /// Reverse proxy filter: It forwards the request to the desired location. It maps one to one, meaning
 /// that a request to `https://www.bar.foo/handle/this/path` forwarding to `https://www.other.location`
