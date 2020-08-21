@@ -66,13 +66,8 @@ async fn response_to_reply(
     }
     builder
         .status(response.status())
-        .body(
-            response
-                .bytes()
-                .await
-                .map_err(|e| errors::Error::Request(e))?,
-        )
-        .map_err(|e| errors::Error::HTTP(e))
+        .body(response.bytes().await.map_err(errors::Error::Request)?)
+        .map_err(errors::Error::HTTP)
 }
 
 /// Checker method to filter hop headers
@@ -130,7 +125,7 @@ fn filtered_data_to_request(
         .headers(headers)
         .body(body)
         .build()
-        .map_err(|e| errors::Error::Request(e))
+        .map_err(errors::Error::Request)
 }
 
 /// Build and send a request to the specified address and request data
@@ -139,7 +134,7 @@ async fn proxy_request(request: reqwest::Request) -> Result<reqwest::Response, e
     client
         .execute(request)
         .await
-        .map_err(|e| errors::Error::Request(e))
+        .map_err(errors::Error::Request)
 }
 
 #[cfg(test)]
