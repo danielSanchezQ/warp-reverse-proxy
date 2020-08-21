@@ -1,3 +1,5 @@
+mod errors;
+
 use http::{HeaderMap, HeaderValue, Method};
 use lazy_static::lazy_static;
 use unicase::Ascii;
@@ -46,21 +48,31 @@ async fn proxy_to_and_forward_response(
     if !base_path.starts_with('/') {
         base_path = format!("/{}", base_path);
     }
-    let request = filtered_data_to_request(proxy_address, base_path, (uri, method, headers, body));
-    let response = proxy_request(request).await;
-    Ok(response_to_reply(response).await)
+    let request = filtered_data_to_request(proxy_address, base_path, (uri, method, headers, body))
+        .map_err(warp::reject::custom)?;
+    let response = proxy_request(request).await.map_err(warp::reject::custom)?;
+    response_to_reply(response)
+        .await
+        .map_err(warp::reject::custom)
 }
 
 /// Converts a reqwest response into a http:Response
-async fn response_to_reply(response: reqwest::Response) -> http::Response<Bytes> {
+async fn response_to_reply(
+    response: reqwest::Response,
+) -> Result<http::Response<Bytes>, errors::Error> {
     let mut builder = http::Response::builder();
     for (k, v) in remove_hop_headers(response.headers()).iter() {
         builder = builder.header(k, v);
     }
     builder
         .status(response.status())
-        .body(response.bytes().await.unwrap())
-        .unwrap()
+        .body(
+            response
+                .bytes()
+                .await
+                .map_err(|e| errors::Error::Request(e))?,
+        )
+        .map_err(|e| errors::Error::HTTP(e))
 }
 
 /// Checker method to filter hop headers
@@ -99,7 +111,7 @@ fn filtered_data_to_request(
     proxy_address: String,
     base_path: String,
     request: Request,
-) -> reqwest::Request {
+) -> Result<reqwest::Request, errors::Error> {
     let (uri, method, headers, body) = request;
 
     let relative_path = uri
@@ -118,13 +130,16 @@ fn filtered_data_to_request(
         .headers(headers)
         .body(body)
         .build()
-        .unwrap()
+        .map_err(|e| errors::Error::Request(e))
 }
 
 /// Build and send a request to the specified address and request data
-async fn proxy_request(request: reqwest::Request) -> reqwest::Response {
+async fn proxy_request(request: reqwest::Request) -> Result<reqwest::Response, errors::Error> {
     let client = reqwest::Client::new();
-    client.execute(request).await.unwrap()
+    client
+        .execute(request)
+        .await
+        .map_err(|e| errors::Error::Request(e))
 }
 
 #[cfg(test)]
@@ -192,8 +207,9 @@ pub mod test {
         tokio::task::yield_now().await;
         // transform request data into an actual request
         let request =
-            filtered_data_to_request("http://127.0.0.1:4040".to_string(), "".to_string(), request);
-        let response = proxy_request(request).await;
+            filtered_data_to_request("http://127.0.0.1:4040".to_string(), "".to_string(), request)
+                .unwrap();
+        let response = proxy_request(request).await.unwrap();
         assert_eq!(response.status(), http::status::StatusCode::OK);
     }
 
