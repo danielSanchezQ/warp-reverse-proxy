@@ -1,3 +1,33 @@
+//! Fully composable [warp](https://github.com/seanmonstar/warp) filter that can be used as a reverse proxy. It forwards the request to the
+//! desired address and replies back the remote address response.
+//!
+//!
+//! ```no_run
+//! use warp::{hyper::body::Bytes, Filter, Rejection, Reply};
+//! use warp_reverse_proxy::reverse_proxy_filter;
+//!
+//! async fn log_response(response: http::Response<Bytes>) -> Result<impl Reply, Rejection> {
+//!     println!("{:?}", response);
+//!     Ok(response)
+//! }
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     let hello = warp::path!("hello" / String).map(|name| format!("Hello, {}!", name));
+//!
+//!     // // spawn base server
+//!     tokio::spawn(warp::serve(hello).run(([0, 0, 0, 0], 8080)));
+//!
+//!     // Forward request to localhost in other port
+//!     let app = warp::path!("hello" / ..).and(
+//!         reverse_proxy_filter("".to_string(), "http://127.0.0.1:8080/".to_string())
+//!             .and_then(log_response),
+//!     );
+//!
+//!     // spawn proxy server
+//!     warp::serve(app).run(([0, 0, 0, 0], 3030)).await;
+//! }
+//! ```
 mod errors;
 
 use http::{HeaderMap, HeaderValue, Method};
@@ -6,11 +36,28 @@ use unicase::Ascii;
 use warp::filters::path::FullPath;
 use warp::hyper::body::Bytes;
 use warp::{Filter, Rejection};
+
+/// Wrapper around a request data.
+///
+/// It is the type that holds the request data extracted by the [`extract_request_data_filter`](fn.extract_request_data_filter.html) filter.
 pub type Request = (FullPath, Method, HeaderMap, Bytes);
 
-/// Reverse proxy filter: It forwards the request to the desired location. It maps one to one, meaning
+/// Reverse proxy filter:
+/// Forwards the request to the desired location. It maps one to one, meaning
 /// that a request to `https://www.bar.foo/handle/this/path` forwarding to `https://www.other.location`
 /// will result in a request to `https://www.other.location/handle/this/path`.
+///
+/// # Arguments
+///
+/// * `base_path` - A string with the initial relative path of the endpoint.
+/// For example a `foo/` applied for an endpoint `foo/bar/` will result on a proxy to `bar/` (hence `/foo` is removed)
+///
+/// * `proxy_address` - Base proxy address to forward request.
+/// # Examples
+///
+/// When making a filter with a path `/handle/this/path` combined with a filter built
+/// with `reverse_proxy_filter("handle".to_string(), "localhost:8080")`
+/// will make that request arriving to `https://www.bar.foo/handle/this/path` be forwarded to `localhost:8080/this/path`
 pub fn reverse_proxy_filter(
     base_path: String,
     proxy_address: String,
