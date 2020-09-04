@@ -2,7 +2,7 @@
 //! desired address and replies back the remote address response.
 //!
 //!
-//! ```rust
+//! ```no_run
 //! use warp::{hyper::body::Bytes, Filter, Rejection, Reply};
 //! use warp_reverse_proxy::reverse_proxy_filter;
 //!
