@@ -11,7 +11,7 @@ pub enum Error {
 
     /// Errors when connecting to the target service
     #[error("Http error: {0}")]
-    HTTP(#[from] http::Error),
+    HTTP(#[from] warp::http::Error),
 }
 
 impl Reject for Error {}
