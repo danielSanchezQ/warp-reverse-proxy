@@ -3,10 +3,10 @@
 //!
 //!
 //! ```no_run
-//! use warp::{hyper::body::Bytes, Filter, Rejection, Reply};
+//! use warp::{hyper::body::Bytes, Filter, Rejection, Reply, http::Response};
 //! use warp_reverse_proxy::reverse_proxy_filter;
 //!
-//! async fn log_response(response: http::Response<Bytes>) -> Result<impl Reply, Rejection> {
+//! async fn log_response(response: Response<Bytes>) -> Result<impl Reply, Rejection> {
 //!     println!("{:?}", response);
 //!     Ok(response)
 //! }
@@ -30,10 +30,11 @@
 //! ```
 mod errors;
 
-use http::{HeaderMap, HeaderValue, Method};
 use lazy_static::lazy_static;
 use unicase::Ascii;
 use warp::filters::path::FullPath;
+use warp::http;
+use warp::http::{HeaderMap, HeaderValue, Method};
 use warp::hyper::body::Bytes;
 use warp::{Filter, Rejection};
 
@@ -191,6 +192,7 @@ pub mod test {
         Request,
     };
     use std::net::SocketAddr;
+    use warp::http::StatusCode;
     use warp::Filter;
 
     fn serve_test_response(path: String, address: SocketAddr) {
@@ -252,7 +254,7 @@ pub mod test {
             filtered_data_to_request("http://127.0.0.1:4040".to_string(), "".to_string(), request)
                 .unwrap();
         let response = proxy_request(request).await.unwrap();
-        assert_eq!(response.status(), http::status::StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]
@@ -281,6 +283,6 @@ pub mod test {
             .reply(&filter)
             .await;
 
-        assert_eq!(response.status(), http::status::StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }
