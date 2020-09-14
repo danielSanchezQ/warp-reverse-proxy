@@ -19,8 +19,10 @@
 //!     tokio::spawn(warp::serve(hello).run(([0, 0, 0, 0], 8080)));
 //!
 //!     // Forward request to localhost in other port
+//!     let base_path_filter = warp::any().map(|| "".to_string()).boxed();
+//!     let proxy_address_filter = warp::any().map(|| "http://127.0.0.1:8080/".to_string()).boxed();
 //!     let app = warp::path!("hello" / ..).and(
-//!         reverse_proxy_filter("".to_string(), "http://127.0.0.1:8080/".to_string())
+//!         reverse_proxy_filter(base_path_filter, proxy_address_filter)
 //!             .and_then(log_response),
 //!     );
 //!
@@ -33,6 +35,7 @@ mod errors;
 use lazy_static::lazy_static;
 use unicase::Ascii;
 use warp::filters::path::FullPath;
+use warp::filters::BoxedFilter;
 use warp::http;
 use warp::http::{HeaderMap, HeaderValue, Method};
 use warp::hyper::body::Bytes;
@@ -60,15 +63,13 @@ pub type Request = (FullPath, Method, HeaderMap, Bytes);
 /// with `reverse_proxy_filter("handle".to_string(), "localhost:8080")`
 /// will make that request arriving to `https://www.bar.foo/handle/this/path` be forwarded to `localhost:8080/this/path`
 pub fn reverse_proxy_filter(
-    base_path: String,
-    proxy_address: String,
+    base_path_getter: BoxedFilter<(String,)>,
+    proxy_address_getter: BoxedFilter<(String,)>,
 ) -> impl Filter<Extract = (http::Response<Bytes>,), Error = Rejection> + Clone {
-    let proxy_address = warp::any().map(move || proxy_address.clone());
-    let base_path = warp::any().map(move || base_path.clone());
     let data_filter = extract_request_data_filter();
 
-    proxy_address
-        .and(base_path)
+    proxy_address_getter
+        .and(base_path_getter)
         .and(data_filter)
         .and_then(proxy_to_and_forward_response)
         .boxed()
@@ -261,8 +262,8 @@ pub mod test {
     async fn full_reverse_proxy_filter_forward_response() {
         let address_str = "http://127.0.0.1:3030";
         let filter = warp::path!("relative_path" / ..).and(reverse_proxy_filter(
-            "relative_path".to_string(),
-            address_str.to_string(),
+            warp::any().map(move || "relative_path".to_string()).boxed(),
+            warp::any().map(move || address_str.to_string()).boxed(),
         ));
         let address = ([127, 0, 0, 1], 3030);
         let (path, method, body, header) = (
