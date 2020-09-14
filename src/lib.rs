@@ -53,10 +53,10 @@ pub type Request = (FullPath, Method, HeaderMap, Bytes);
 ///
 /// # Arguments
 ///
-/// * `base_path` - A string with the initial relative path of the endpoint.
+/// * `base_path` - A warp::Filter that extracts a String with the initial relative path of the endpoint.
 /// For example a `foo/` applied for an endpoint `foo/bar/` will result on a proxy to `bar/` (hence `/foo` is removed)
 ///
-/// * `proxy_address` - Base proxy address to forward request.
+/// * `proxy_address` - warp::Filter that extracts a String with the base proxy address to forward request.
 /// # Examples
 ///
 /// When making a filter with a path `/handle/this/path` combined with a filter built
