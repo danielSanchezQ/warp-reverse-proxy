@@ -41,7 +41,7 @@ use warp::{Filter, Rejection};
 /// Wrapper around a request data.
 ///
 /// It is the type that holds the request data extracted by the [`extract_request_data_filter`](fn.extract_request_data_filter.html) filter.
-pub type Request = (FullPath, Method, HeaderMap, Bytes);
+pub type Request = (FullPath, String, Method, HeaderMap, Bytes);
 
 /// Reverse proxy filter:
 /// Forwards the request to the desired location. It maps one to one, meaning
@@ -78,6 +78,7 @@ pub fn reverse_proxy_filter(
 pub fn extract_request_data_filter(
 ) -> impl Filter<Extract = Request, Error = warp::Rejection> + Clone {
     warp::path::full()
+        .and(warp::filters::query::raw())
         .and(warp::method())
         .and(warp::header::headers_cloned())
         .and(warp::body::bytes())
@@ -89,6 +90,7 @@ async fn proxy_to_and_forward_response(
     proxy_address: String,
     mut base_path: String,
     uri: FullPath,
+    params: String,
     method: Method,
     headers: HeaderMap,
     body: Bytes,
@@ -96,7 +98,7 @@ async fn proxy_to_and_forward_response(
     if !base_path.starts_with('/') {
         base_path = format!("/{}", base_path);
     }
-    let request = filtered_data_to_request(proxy_address, base_path, (uri, method, headers, body))
+    let request = filtered_data_to_request(proxy_address, base_path, (uri, params, method, headers, body))
         .map_err(warp::reject::custom)?;
     let response = proxy_request(request).await.map_err(warp::reject::custom)?;
     response_to_reply(response)
@@ -155,7 +157,7 @@ fn filtered_data_to_request(
     base_path: String,
     request: Request,
 ) -> Result<reqwest::Request, errors::Error> {
-    let (uri, method, headers, body) = request;
+    let (uri, params, method, headers, body) = request;
 
     let relative_path = uri
         .as_str()
@@ -163,7 +165,11 @@ fn filtered_data_to_request(
         .trim_start_matches('/');
 
     let proxy_address = proxy_address.trim_end_matches('/');
-    let proxy_uri = format!("{}/{}", proxy_address, relative_path);
+    let proxy_uri = if !params.is_empty() {
+        format!("{}/{}?{}", proxy_address, relative_path, params)
+    } else {
+        format!("{}/{}", proxy_address, relative_path)
+    };
 
     let headers = remove_hop_headers(&headers);
 
@@ -207,7 +213,7 @@ pub mod test {
     async fn request_data_match() {
         let filter = extract_request_data_filter();
 
-        let (path, method, body, header) = ("/foo/bar", "POST", b"foo bar", ("foo", "bar"));
+        let (path, params, method, body, header) = ("/foo/bar", "POST", b"foo bar", ("foo", "bar"));
 
         let result = warp::test::request()
             .path(path)
@@ -228,8 +234,9 @@ pub mod test {
     #[tokio::test]
     async fn proxy_forward_response() {
         let filter = extract_request_data_filter();
-        let (path, method, body, header) = (
+        let (path, params, method, body, header) = (
             "http://127.0.0.1:3030/foo/bar",
+            "",
             "GET",
             b"foo bar",
             ("foo", "bar"),
