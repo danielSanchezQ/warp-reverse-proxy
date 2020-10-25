@@ -41,7 +41,7 @@ use warp::{Filter, Rejection};
 /// Wrapper around a request data.
 ///
 /// It is the type that holds the request data extracted by the [`extract_request_data_filter`](fn.extract_request_data_filter.html) filter.
-pub type Request = (FullPath, String, Method, HeaderMap, Bytes);
+pub type Request = (FullPath, Option<String>, Method, HeaderMap, Bytes);
 
 /// Reverse proxy filter:
 /// Forwards the request to the desired location. It maps one to one, meaning
@@ -74,11 +74,21 @@ pub fn reverse_proxy_filter(
         .boxed()
 }
 
+
+pub fn query_params(
+) -> impl Filter<Extract = (Option<String>,), Error = std::convert::Infallible> + Clone {
+    warp::query::raw()
+        .map(Some)
+        .or_else(|_| async {
+            Ok::<(Option<String>,), std::convert::Infallible>((None,))
+        })
+}
+
 /// Warp filter that extracts the relative request path, method, headers map and body of a request.
 pub fn extract_request_data_filter(
 ) -> impl Filter<Extract = Request, Error = warp::Rejection> + Clone {
     warp::path::full()
-        .and(warp::filters::query::raw())
+        .and(query_params())
         .and(warp::method())
         .and(warp::header::headers_cloned())
         .and(warp::body::bytes())
@@ -90,7 +100,7 @@ async fn proxy_to_and_forward_response(
     proxy_address: String,
     mut base_path: String,
     uri: FullPath,
-    params: String,
+    params: Option<String>,
     method: Method,
     headers: HeaderMap,
     body: Bytes,
@@ -165,7 +175,8 @@ fn filtered_data_to_request(
         .trim_start_matches('/');
 
     let proxy_address = proxy_address.trim_end_matches('/');
-    let proxy_uri = if !params.is_empty() {
+
+    let proxy_uri = if let Some(params) = params {
         format!("{}/{}?{}", proxy_address, relative_path, params)
     } else {
         format!("{}/{}", proxy_address, relative_path)
