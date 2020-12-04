@@ -38,10 +38,16 @@ use warp::http::{HeaderMap, HeaderValue, Method};
 use warp::hyper::body::Bytes;
 use warp::{Filter, Rejection};
 
+/// Wrapper around query parameters.
+///
+/// This is the type that holds the request query parameters.
+pub type QueryParameters = Option<String>;
+
+
 /// Wrapper around a request data.
 ///
 /// It is the type that holds the request data extracted by the [`extract_request_data_filter`](fn.extract_request_data_filter.html) filter.
-pub type Request = (FullPath, Option<String>, Method, HeaderMap, Bytes);
+pub type Request = (FullPath, QueryParameters, Method, HeaderMap, Bytes);
 
 /// Reverse proxy filter:
 /// Forwards the request to the desired location. It maps one to one, meaning
@@ -76,11 +82,11 @@ pub fn reverse_proxy_filter(
 
 
 pub fn query_params(
-) -> impl Filter<Extract = (Option<String>,), Error = std::convert::Infallible> + Clone {
+) -> impl Filter<Extract = (QueryParameters,), Error = std::convert::Infallible> + Clone {
     warp::query::raw()
         .map(Some)
         .or_else(|_| async {
-            Ok::<(Option<String>,), std::convert::Infallible>((None,))
+            Ok::<(QueryParameters,), std::convert::Infallible>((None,))
         })
 }
 
@@ -100,7 +106,7 @@ async fn proxy_to_and_forward_response(
     proxy_address: String,
     mut base_path: String,
     uri: FullPath,
-    params: Option<String>,
+    params: QueryParameters,
     method: Method,
     headers: HeaderMap,
     body: Bytes,
@@ -224,19 +230,21 @@ pub mod test {
     async fn request_data_match() {
         let filter = extract_request_data_filter();
 
-        let (path, params, method, body, header) = ("/foo/bar", "POST", b"foo bar", ("foo", "bar"));
+        let (path, query, method, body, header) = ("/foo/bar", "foo=bar", "POST", b"foo bar", ("foo", "bar"));
+        let path_with_query = format!("{}?{}", path, query);
 
         let result = warp::test::request()
-            .path(path)
+            .path(path_with_query.as_str())
             .method(method)
             .body(body)
             .header(header.0, header.1)
             .filter(&filter)
             .await;
 
-        let (result_path, result_method, result_headers, result_body): Request = result.unwrap();
+        let (result_path, result_query, result_method, result_headers, result_body): Request = result.unwrap();
 
         assert_eq!(path, result_path.as_str());
+        assert_eq!(Some(query.to_string()), result_query.map(|x| x.to_string()));
         assert_eq!(method, result_method.as_str());
         assert_eq!(bytes::Bytes::from(body.to_vec()), result_body);
         assert_eq!(result_headers.get(header.0).unwrap(), header.1);
@@ -245,16 +253,15 @@ pub mod test {
     #[tokio::test]
     async fn proxy_forward_response() {
         let filter = extract_request_data_filter();
-        let (path, params, method, body, header) = (
-            "http://127.0.0.1:3030/foo/bar",
-            "",
+        let (path_with_params, method, body, header) = (
+            "http://127.0.0.1:3030/foo/bar?foo=bar",
             "GET",
             b"foo bar",
             ("foo", "bar"),
         );
 
         let result = warp::test::request()
-            .path(path)
+            .path(path_with_params)
             .method(method)
             .body(body)
             .header(header.0, header.1)
