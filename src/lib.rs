@@ -247,7 +247,7 @@ pub mod test {
             result.unwrap();
 
         assert_eq!(path, result_path.as_str());
-        assert_eq!(Some(query.to_string()), result_query.map(|x| x.to_string()));
+        assert_eq!(Some(query.to_string()), result_query);
         assert_eq!(method, result_method.as_str());
         assert_eq!(bytes::Bytes::from(body.to_vec()), result_body);
         assert_eq!(result_headers.get(header.0).unwrap(), header.1);
