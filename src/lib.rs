@@ -43,7 +43,6 @@ use warp::{Filter, Rejection};
 /// This is the type that holds the request query parameters.
 pub type QueryParameters = Option<String>;
 
-
 /// Wrapper around a request data.
 ///
 /// It is the type that holds the request data extracted by the [`extract_request_data_filter`](fn.extract_request_data_filter.html) filter.
@@ -80,14 +79,11 @@ pub fn reverse_proxy_filter(
         .boxed()
 }
 
-
 pub fn query_params(
 ) -> impl Filter<Extract = (QueryParameters,), Error = std::convert::Infallible> + Clone {
     warp::query::raw()
         .map(Some)
-        .or_else(|_| async {
-            Ok::<(QueryParameters,), std::convert::Infallible>((None,))
-        })
+        .or_else(|_| async { Ok::<(QueryParameters,), std::convert::Infallible>((None,)) })
 }
 
 /// Warp filter that extracts the relative request path, method, headers map and body of a request.
@@ -114,8 +110,12 @@ async fn proxy_to_and_forward_response(
     if !base_path.starts_with('/') {
         base_path = format!("/{}", base_path);
     }
-    let request = filtered_data_to_request(proxy_address, base_path, (uri, params, method, headers, body))
-        .map_err(warp::reject::custom)?;
+    let request = filtered_data_to_request(
+        proxy_address,
+        base_path,
+        (uri, params, method, headers, body),
+    )
+    .map_err(warp::reject::custom)?;
     let response = proxy_request(request).await.map_err(warp::reject::custom)?;
     response_to_reply(response)
         .await
@@ -230,7 +230,8 @@ pub mod test {
     async fn request_data_match() {
         let filter = extract_request_data_filter();
 
-        let (path, query, method, body, header) = ("/foo/bar", "foo=bar", "POST", b"foo bar", ("foo", "bar"));
+        let (path, query, method, body, header) =
+            ("/foo/bar", "foo=bar", "POST", b"foo bar", ("foo", "bar"));
         let path_with_query = format!("{}?{}", path, query);
 
         let result = warp::test::request()
@@ -241,7 +242,8 @@ pub mod test {
             .filter(&filter)
             .await;
 
-        let (result_path, result_query, result_method, result_headers, result_body): Request = result.unwrap();
+        let (result_path, result_query, result_method, result_headers, result_body): Request =
+            result.unwrap();
 
         assert_eq!(path, result_path.as_str());
         assert_eq!(Some(query.to_string()), result_query.map(|x| x.to_string()));
