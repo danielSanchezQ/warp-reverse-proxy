@@ -79,7 +79,8 @@ pub fn reverse_proxy_filter(
         .boxed()
 }
 
-pub fn query_params(
+/// Warp filter that extracts query parameters from the request, if they exist.
+pub fn query_params_filter(
 ) -> impl Filter<Extract = (QueryParameters,), Error = std::convert::Infallible> + Clone {
     warp::query::raw()
         .map(Some)
@@ -90,7 +91,7 @@ pub fn query_params(
 pub fn extract_request_data_filter(
 ) -> impl Filter<Extract = Request, Error = warp::Rejection> + Clone {
     warp::path::full()
-        .and(query_params())
+        .and(query_params_filter())
         .and(warp::method())
         .and(warp::header::headers_cloned())
         .and(warp::body::bytes())
