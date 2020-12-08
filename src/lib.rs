@@ -131,18 +131,13 @@ pub fn extract_request_data_filter(
 /// ```
 pub async fn proxy_to_and_forward_response(
     proxy_address: String,
-    mut base_path: String,
+    base_path: String,
     uri: FullPath,
     params: QueryParameters,
     method: Method,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<http::Response<Bytes>, Rejection> {
-    if !base_path.starts_with('/') {
-        base_path = format!("/{}", base_path);
-    }
-    let request = filtered_data_to_request(proxy_address, (uri, params, method, headers, body))
-        .map_err(warp::reject::custom)?;
     let proxy_uri = remove_relative_path(&uri, base_path, proxy_address);
     let request = filtered_data_to_request(proxy_uri, (uri, params, method, headers, body))
         .map_err(warp::reject::custom)?;
@@ -166,7 +161,8 @@ async fn response_to_reply(
         .map_err(errors::Error::HTTP)
 }
 
-fn remove_relative_path(uri: &FullPath, mut base_path: String, proxy_address: String) -> String {
+fn remove_relative_path(uri: &FullPath, base_path: String, proxy_address: String) -> String {
+    let mut base_path = base_path;
     if !base_path.starts_with('/') {
         base_path = format!("/{}", base_path);
     }
@@ -217,10 +213,7 @@ fn filtered_data_to_request(
 ) -> Result<reqwest::Request, errors::Error> {
     let (uri, params, method, headers, body) = request;
 
-    let relative_path = uri
-        .as_str()
-        .trim_start_matches(&base_path)
-        .trim_start_matches('/');
+    let relative_path = uri.as_str().trim_start_matches('/');
 
     let proxy_address = proxy_address.trim_end_matches('/');
 
@@ -234,7 +227,7 @@ fn filtered_data_to_request(
 
     let client = reqwest::Client::new();
     client
-        .request(method, &proxy_address)
+        .request(method, &proxy_uri)
         .headers(headers)
         .body(body)
         .build()
