@@ -211,16 +211,12 @@ fn filtered_data_to_request(
     proxy_address: String,
     request: Request,
 ) -> Result<reqwest::Request, errors::Error> {
-    let (uri, params, method, headers, body) = request;
-
-    let relative_path = uri.as_str().trim_start_matches('/');
-
-    let proxy_address = proxy_address.trim_end_matches('/');
+    let (_uri, params, method, headers, body) = request;
 
     let proxy_uri = if let Some(params) = params {
-        format!("{}/{}?{}", proxy_address, relative_path, params)
+        format!("{}?{}", proxy_address, params)
     } else {
-        format!("{}/{}", proxy_address, relative_path)
+        proxy_address
     };
 
     let headers = remove_hop_headers(&headers);
