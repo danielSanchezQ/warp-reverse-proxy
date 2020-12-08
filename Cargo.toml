@@ -25,5 +25,5 @@ unicase = "2.6.0"
 warp = "0.2.4"
 
 [dev-dependencies]
-bytes = "0.5.6"
+bytes = "0.6.0"
 tokio = { version = "0.2.22", features = ["macros"] }
