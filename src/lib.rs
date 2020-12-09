@@ -109,6 +109,8 @@ pub fn extract_request_data_filter(
 ///
 /// * `uri` -> The uri of the extracted request.
 ///
+/// * `params` -> The URL query parameters
+///
 /// * `method` -> The request method.
 ///
 /// * `headers` -> The request headers.
@@ -122,12 +124,12 @@ pub fn extract_request_data_filter(
 /// and the `base_path` arguments need to be provided too.
 /// ```rust, ignore
 /// let request_filter = extract_request_data_filter();
-///     let app = warp::path!("hello" / String)
-///         .map(|port| (format!("http://127.0.0.1:{}/", port), "".to_string()))
-///         .untuple_one()
-///         .and(request_filter)
-///         .and_then(proxy_to_and_forward_response)
-///         .and_then(log_response);
+/// let app = warp::path!("hello" / String)
+///     .map(|port| (format!("http://127.0.0.1:{}/", port), "".to_string()))
+///     .untuple_one()
+///     .and(request_filter)
+///     .and_then(proxy_to_and_forward_response)
+///     .and_then(log_response);
 /// ```
 pub async fn proxy_to_and_forward_response(
     proxy_address: String,
