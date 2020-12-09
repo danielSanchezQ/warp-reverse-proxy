@@ -32,9 +32,9 @@ mod errors;
 
 use lazy_static::lazy_static;
 use unicase::Ascii;
-use warp::filters::path::FullPath;
+pub use warp::filters::path::FullPath;
 use warp::http;
-use warp::http::{HeaderMap, HeaderValue, Method};
+pub use warp::http::{HeaderMap, HeaderValue, Method};
 use warp::hyper::body::Bytes;
 use warp::{Filter, Rejection};
 
@@ -43,10 +43,13 @@ use warp::{Filter, Rejection};
 /// This is the type that holds the request query parameters.
 pub type QueryParameters = Option<String>;
 
+/// Wrapper around request body bytes
+pub type Body = Bytes;
+
 /// Wrapper around a request data.
 ///
 /// It is the type that holds the request data extracted by the [`extract_request_data_filter`](fn.extract_request_data_filter.html) filter.
-pub type Request = (FullPath, QueryParameters, Method, HeaderMap, Bytes);
+pub type Request = (FullPath, QueryParameters, Method, HeaderMap, Body);
 
 /// Reverse proxy filter:
 /// Forwards the request to the desired location. It maps one to one, meaning
