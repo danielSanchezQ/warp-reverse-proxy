@@ -7,6 +7,7 @@ Fully composable [warp](https://github.com/seanmonstar/warp) filter that can be 
 desired address and replies back the remote address response.
 
 
+### As simple as
 ```rust
 use warp::{hyper::body::Bytes, Filter, Rejection, Reply};
 use warp_reverse_proxy::reverse_proxy_filter;
@@ -28,6 +29,32 @@ async fn main() {
         reverse_proxy_filter("".to_string(), "http://127.0.0.1:8080/".to_string())
             .and_then(log_response),
     );
+
+    // spawn proxy server
+    warp::serve(app).run(([0, 0, 0, 0], 3030)).await;
+}
+```
+
+
+### For more control. You can compose inner library filters to help you compose your own reverse proxy
+
+```rust
+#[tokio::main]
+async fn main() {
+    let hello = warp::path!("hello" / String).map(|name| format!("Hello port, {}!", name));
+
+    // // spawn base server
+    tokio::spawn(warp::serve(hello).run(([0, 0, 0, 0], 8080)));
+
+    let request_filter = extract_request_data_filter();
+    let app = warp::path!("hello" / String)
+        // build proxy address and base path data from current filter
+        .map(|port| (format!("http://127.0.0.1:{}/", port), "".to_string()))
+        .untuple_one()
+        // build the request with data from previous filters
+        .and(request_filter)
+        .and_then(proxy_to_and_forward_response)
+        .and_then(log_response);
 
     // spawn proxy server
     warp::serve(app).run(([0, 0, 0, 0], 3030)).await;

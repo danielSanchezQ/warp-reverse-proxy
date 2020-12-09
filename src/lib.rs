@@ -99,24 +99,50 @@ pub fn extract_request_data_filter(
 
 /// Build a request and send to the requested address. wraps the response into a
 /// warp::reply compatible type (`http::Response`)
-async fn proxy_to_and_forward_response(
+///
+/// # Arguments
+///
+/// * `proxy_address` - A string containing the base proxy address where the request
+/// will be forwarded to.
+///
+/// * `base_path` - A string with the prepended sub-path to be stripped from the request uri path.
+///
+/// * `uri` -> The uri of the extracted request.
+///
+/// * `params` -> The URL query parameters
+///
+/// * `method` -> The request method.
+///
+/// * `headers` -> The request headers.
+///
+/// * `body` -> The request body.
+///
+/// # Examples
+/// Notice that this method usually need to be used in aggregation with
+/// the [`extract_request_data_filter`](fn.extract_request_data_filter.html) filter` which already
+/// provides the `(uri, method, headers, body)` needed for calling this method. But the `proxy_address`
+/// and the `base_path` arguments need to be provided too.
+/// ```rust, ignore
+/// let request_filter = extract_request_data_filter();
+/// let app = warp::path!("hello" / String)
+///     .map(|port| (format!("http://127.0.0.1:{}/", port), "".to_string()))
+///     .untuple_one()
+///     .and(request_filter)
+///     .and_then(proxy_to_and_forward_response)
+///     .and_then(log_response);
+/// ```
+pub async fn proxy_to_and_forward_response(
     proxy_address: String,
-    mut base_path: String,
+    base_path: String,
     uri: FullPath,
     params: QueryParameters,
     method: Method,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<http::Response<Bytes>, Rejection> {
-    if !base_path.starts_with('/') {
-        base_path = format!("/{}", base_path);
-    }
-    let request = filtered_data_to_request(
-        proxy_address,
-        base_path,
-        (uri, params, method, headers, body),
-    )
-    .map_err(warp::reject::custom)?;
+    let proxy_uri = remove_relative_path(&uri, base_path, proxy_address);
+    let request = filtered_data_to_request(proxy_uri, (uri, params, method, headers, body))
+        .map_err(warp::reject::custom)?;
     let response = proxy_request(request).await.map_err(warp::reject::custom)?;
     response_to_reply(response)
         .await
@@ -135,6 +161,20 @@ async fn response_to_reply(
         .status(response.status())
         .body(response.bytes().await.map_err(errors::Error::Request)?)
         .map_err(errors::Error::HTTP)
+}
+
+fn remove_relative_path(uri: &FullPath, base_path: String, proxy_address: String) -> String {
+    let mut base_path = base_path;
+    if !base_path.starts_with('/') {
+        base_path = format!("/{}", base_path);
+    }
+    let relative_path = uri
+        .as_str()
+        .trim_start_matches(&base_path)
+        .trim_start_matches('/');
+
+    let proxy_address = proxy_address.trim_end_matches('/');
+    format!("{}/{}", proxy_address, relative_path)
 }
 
 /// Checker method to filter hop headers
@@ -171,22 +211,14 @@ fn remove_hop_headers(headers: &HeaderMap<HeaderValue>) -> HeaderMap<HeaderValue
 
 fn filtered_data_to_request(
     proxy_address: String,
-    base_path: String,
     request: Request,
 ) -> Result<reqwest::Request, errors::Error> {
-    let (uri, params, method, headers, body) = request;
-
-    let relative_path = uri
-        .as_str()
-        .trim_start_matches(&base_path)
-        .trim_start_matches('/');
-
-    let proxy_address = proxy_address.trim_end_matches('/');
+    let (_uri, params, method, headers, body) = request;
 
     let proxy_uri = if let Some(params) = params {
-        format!("{}/{}?{}", proxy_address, relative_path, params)
+        format!("{}?{}", proxy_address, params)
     } else {
-        format!("{}/{}", proxy_address, relative_path)
+        proxy_address
     };
 
     let headers = remove_hop_headers(&headers);
@@ -212,8 +244,8 @@ async fn proxy_request(request: reqwest::Request) -> Result<reqwest::Response, e
 #[cfg(test)]
 pub mod test {
     use crate::{
-        extract_request_data_filter, filtered_data_to_request, proxy_request, reverse_proxy_filter,
-        Request,
+        extract_request_data_filter, filtered_data_to_request, proxy_request, remove_relative_path,
+        reverse_proxy_filter, Request,
     };
     use std::net::SocketAddr;
     use warp::http::StatusCode;
@@ -278,9 +310,15 @@ pub mod test {
 
         tokio::task::yield_now().await;
         // transform request data into an actual request
-        let request =
-            filtered_data_to_request("http://127.0.0.1:4040".to_string(), "".to_string(), request)
-                .unwrap();
+        let request = filtered_data_to_request(
+            remove_relative_path(
+                &request.0,
+                "".to_string(),
+                "http://127.0.0.1:4040".to_string(),
+            ),
+            request,
+        )
+        .unwrap();
         let response = proxy_request(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
     }
