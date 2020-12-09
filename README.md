@@ -7,8 +7,14 @@
 Fully composable [warp](https://github.com/seanmonstar/warp) filter that can be used as a reverse proxy. It forwards the request to the 
 desired address and replies back the remote address response.
 
+### Add the library dependency
+```toml
+[dependencies]
+warp = "0.2"
+warp-reverse-proxy = "0.2"
+```
 
-### As simple as
+### Use it as simple as:
 ```rust
 use warp::{hyper::body::Bytes, Filter, Rejection, Reply};
 use warp_reverse_proxy::reverse_proxy_filter;
@@ -37,7 +43,7 @@ async fn main() {
 ```
 
 
-### For more control. You can compose inner library filters to help you compose your own reverse proxy
+### For more control. You can compose inner library filters to help you compose your own reverse proxy:
 
 ```rust
 #[tokio::main]
