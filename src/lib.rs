@@ -34,19 +34,31 @@ use lazy_static::lazy_static;
 use unicase::Ascii;
 use warp::filters::path::FullPath;
 use warp::http;
-use warp::http::{HeaderMap, HeaderValue, Method};
+use warp::http::{HeaderMap, HeaderValue, Method as RequestMethod};
 use warp::hyper::body::Bytes;
 use warp::{Filter, Rejection};
 
-/// Wrapper around query parameters.
+/// Alias of warp `FullPath`
+pub type Uri = FullPath;
+
+/// Alias of query parameters.
 ///
 /// This is the type that holds the request query parameters.
 pub type QueryParameters = Option<String>;
 
-/// Wrapper around a request data.
+/// Alias of warp `Method`
+pub type Method = RequestMethod;
+
+/// Alias of warp `HeaderMap`
+pub type Headers = HeaderMap;
+
+/// Alias of request body bytes
+pub type Body = Bytes;
+
+/// Wrapper around a request data tuple.
 ///
 /// It is the type that holds the request data extracted by the [`extract_request_data_filter`](fn.extract_request_data_filter.html) filter.
-pub type Request = (FullPath, QueryParameters, Method, HeaderMap, Bytes);
+pub type Request = (Uri, QueryParameters, Method, Headers, Body);
 
 /// Reverse proxy filter:
 /// Forwards the request to the desired location. It maps one to one, meaning
@@ -119,8 +131,8 @@ pub fn extract_request_data_filter(
 ///
 /// # Examples
 /// Notice that this method usually need to be used in aggregation with
-/// the [`extract_request_data_filter`](fn.extract_request_data_filter.html) filter` which already
-/// provides the `(uri, method, headers, body)` needed for calling this method. But the `proxy_address`
+/// the [`extract_request_data_filter`](fn.extract_request_data_filter.html) filter which already
+/// provides the `(Uri, QueryParameters, Method, Headers, Body)` needed for calling this method. But the `proxy_address`
 /// and the `base_path` arguments need to be provided too.
 /// ```rust, ignore
 /// let request_filter = extract_request_data_filter();
