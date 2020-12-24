@@ -17,7 +17,7 @@ exclude = [
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-hyper = "0.13.7"
+hyper = "0.14.1"
 lazy_static = "1.4.0"
 reqwest = "0.10.7"
 thiserror = "1.0.20"
