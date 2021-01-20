@@ -26,7 +26,7 @@ warp = "0.3"
 
 [dev-dependencies]
 bytes = "1.0"
-tokio = { version = "1", features = ["macros"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 [features]
 default = ["default-tls"]
 default-tls = ["reqwest/default-tls"]
