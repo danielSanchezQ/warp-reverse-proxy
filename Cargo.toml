@@ -1,9 +1,8 @@
 [package]
 name = "warp-reverse-proxy"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["danielsanchezq <daniel.sanchez@iohk.io>"]
 edition = "2018"
-license = "MIT"
 license-file = "LICENSE"
 homepage = "https://github.com/danielSanchezQ/warp-reverse-proxy"
 repository = "https://github.com/danielSanchezQ/warp-reverse-proxy"
