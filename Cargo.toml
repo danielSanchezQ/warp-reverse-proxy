@@ -16,7 +16,7 @@ exclude = [
 ]
 
 [dependencies]
-hyper = "0.13.7"
+hyper = "0.14.2"
 lazy_static = "1.4.0"
 reqwest = { version = "0.10.7", default-features = false}
 thiserror = "1.0.20"
