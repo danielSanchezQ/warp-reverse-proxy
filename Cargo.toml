@@ -21,7 +21,7 @@ lazy_static = "1.4.0"
 reqwest = { version = "0.10.7", default-features = false}
 thiserror = "1.0.20"
 unicase = "2.6.0"
-warp = "0.2.4"
+warp = "0.3.0"
 
 [dev-dependencies]
 bytes = "0.5.6"
