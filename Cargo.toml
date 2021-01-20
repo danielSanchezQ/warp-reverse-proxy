@@ -1,6 +1,6 @@
 [package]
 name = "warp-reverse-proxy"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["danielsanchezq <daniel.sanchez@iohk.io>"]
 edition = "2018"
 license = "MIT"
@@ -14,7 +14,6 @@ categories = ["web-programming", "web-programming::http-server"]
 exclude = [
     ".github",
 ]
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 hyper = "0.14"
@@ -27,6 +26,7 @@ warp = "0.3"
 [dev-dependencies]
 bytes = "1.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
 [features]
 default = ["default-tls"]
 default-tls = ["reqwest/default-tls"]
