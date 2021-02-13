@@ -161,7 +161,7 @@ pub async fn proxy_to_and_forward_response(
         .map_err(warp::reject::custom)
 }
 
-/// Converts a reqwest response into a http:Response
+/// Converts a reqwest response into a http::Response
 async fn response_to_reply(
     response: reqwest::Response,
 ) -> Result<http::Response<Bytes>, errors::Error> {
@@ -244,10 +244,15 @@ fn filtered_data_to_request(
         .map_err(errors::Error::Request)
 }
 
+
+lazy_static!(
+    // Overlord client instance for all filters
+    static ref CLIENT: reqwest::Client = reqwest::Client::new();
+);
+
 /// Build and send a request to the specified address and request data
 async fn proxy_request(request: reqwest::Request) -> Result<reqwest::Response, errors::Error> {
-    let client = reqwest::Client::new();
-    client
+    CLIENT
         .execute(request)
         .await
         .map_err(errors::Error::Request)
