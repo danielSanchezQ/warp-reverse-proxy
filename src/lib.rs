@@ -244,7 +244,6 @@ fn filtered_data_to_request(
         .map_err(errors::Error::Request)
 }
 
-
 lazy_static!(
     // Overlord client instance for all filters
     static ref CLIENT: reqwest::Client = reqwest::Client::new();
