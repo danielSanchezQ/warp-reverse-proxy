@@ -152,13 +152,82 @@ pub async fn proxy_to_and_forward_response(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<http::Response<Bytes>, Rejection> {
+    match proxy_to_and_forward_response_with_context(
+        proxy_address,
+        base_path,
+        uri,
+        params,
+        method,
+        headers,
+        body,
+        (),
+    )
+        .await
+    {
+        Ok(v) => Ok(v.1),
+        Err(e) => Err(e),
+    }
+}
+
+/// Build a request and send to the requested address. wraps the response into a
+/// warp::reply compatible type (`http::Response`)
+///
+/// This method allows to pass a context object down the pipeline.
+///
+/// # Arguments
+///
+/// * `proxy_address` - A string containing the base proxy address where the request
+/// will be forwarded to.
+///
+/// * `base_path` - A string with the prepended sub-path to be stripped from the request uri path.
+///
+/// * `uri` -> The uri of the extracted request.
+///
+/// * `params` -> The URL query parameters
+///
+/// * `method` -> The request method.
+///
+/// * `headers` -> The request headers.
+///
+/// * `body` -> The request body.
+///
+/// # Examples
+/// Notice that this method usually need to be used in aggregation with
+/// the [`extract_request_data_filter`](fn.extract_request_data_filter.html) filter which already
+/// provides the `(Uri, QueryParameters, Method, Headers, Body)` needed for calling this method. But the `proxy_address`
+/// and the `base_path` arguments need to be provided too.
+/// ```rust, ignore
+/// let request_filter = extract_request_data_filter();
+/// let app = warp::path!("hello" / String)
+///     .map(|port| (format!("http://127.0.0.1:{}/", port), "".to_string()))
+///     .untuple_one()
+///     .and(request_filter)
+///     .and(with_db)
+///     .and_then(proxy_to_and_forward_response_with_context)
+///     .and_then(log_response_with_db);
+/// ```
+pub async fn proxy_to_and_forward_response_with_context<T>(
+    proxy_address: String,
+    base_path: String,
+    uri: FullPath,
+    params: QueryParameters,
+    method: Method,
+    headers: HeaderMap,
+    body: Bytes,
+    context: T,
+) -> Result<(T, http::Response<Bytes>), Rejection> {
     let proxy_uri = remove_relative_path(&uri, base_path, proxy_address);
     let request = filtered_data_to_request(proxy_uri, (uri, params, method, headers, body))
         .map_err(warp::reject::custom)?;
     let response = proxy_request(request).await.map_err(warp::reject::custom)?;
-    response_to_reply(response)
+
+    match response_to_reply(response)
         .await
         .map_err(warp::reject::custom)
+    {
+        Ok(response) => Ok((context, response)),
+        Err(e) => Err(e),
+    }
 }
 
 /// Converts a reqwest response into a http::Response
