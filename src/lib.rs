@@ -28,7 +28,7 @@
 //!     warp::serve(app).run(([0, 0, 0, 0], 3030)).await;
 //! }
 //! ```
-mod errors;
+pub mod errors;
 
 use lazy_static::lazy_static;
 use unicase::Ascii;
