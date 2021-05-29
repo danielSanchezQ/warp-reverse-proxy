@@ -235,8 +235,7 @@ fn filtered_data_to_request(
 
     let headers = remove_hop_headers(&headers);
 
-    let client = reqwest::Client::new();
-    client
+    CLIENT
         .request(method, &proxy_uri)
         .headers(headers)
         .body(body)
