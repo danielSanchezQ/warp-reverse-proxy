@@ -38,6 +38,11 @@ use warp::http::{HeaderMap, HeaderValue, Method as RequestMethod};
 use warp::hyper::body::Bytes;
 use warp::{Filter, Rejection};
 
+lazy_static!(
+    // Overlord client instance for all filters
+    static ref CLIENT: reqwest::Client = reqwest::Client::new();
+);
+
 /// Alias of warp `FullPath`
 pub type Uri = FullPath;
 
@@ -242,11 +247,6 @@ fn filtered_data_to_request(
         .build()
         .map_err(errors::Error::Request)
 }
-
-lazy_static!(
-    // Overlord client instance for all filters
-    static ref CLIENT: reqwest::Client = reqwest::Client::new();
-);
 
 /// Build and send a request to the specified address and request data
 async fn proxy_request(request: reqwest::Request) -> Result<reqwest::Response, errors::Error> {
