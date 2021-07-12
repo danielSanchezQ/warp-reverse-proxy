@@ -4,7 +4,7 @@
 [![GHA Build Status](https://github.com/danielsanchezq/warp-reverse-proxy/workflows/CI/badge.svg)](https://github.com/danielsanchezq/warp-reverse-proxy/actions?query=workflow%3ACI)
 [![Docs Badge](https://docs.rs/warp-reverse-proxy/badge.svg)](https://docs.rs/warp-reverse-proxy)
 
-Fully composable [warp](https://github.com/seanmonstar/warp) filter that can be used as a reverse proxy. It forwards the request to the 
+Fully composable [warp](https://github.com/seanmonstar/warp) filter that can be used as a reverse proxy. It forwards the request to the
 desired address and replies back the remote address response.
 
 ### Add the library dependency
@@ -66,4 +66,21 @@ async fn main() {
     // spawn proxy server
     warp::serve(app).run(([0, 0, 0, 0], 3030)).await;
 }
+```
+
+### If you need to make an insecure HTTPS request, e.g. to a device with a self-signed certificate
+
+- Carefully consider the implications of doing this
+- Make sure that one of the features `default-tls` or `rustls-tls` is enabled
+- Set the environment variable `INSECURE_TLS` to `true` before running your binary
+
+Examples
+
+```sh
+export INSECURE_TLS=true
+./target/debug/your_binary_name
+```
+
+```sh
+INSECURE_TLS=true cargo run
 ```

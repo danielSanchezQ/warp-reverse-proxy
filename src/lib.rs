@@ -40,7 +40,18 @@ use warp::{Filter, Rejection};
 
 lazy_static!(
     // Overlord client instance for all filters
-    static ref CLIENT: reqwest::Client = reqwest::Client::new();
+    static ref CLIENT: reqwest::Client = {
+        let builder = reqwest::ClientBuilder::new();
+        #[cfg(any(feature = "default-tls", feature = "rustls-tls"))]
+        let builder = {
+            if std::env::var("INSECURE_TLS").unwrap_or_else(|_| "".into()) == "true" {
+                builder.danger_accept_invalid_certs(true)
+            } else {
+                builder
+            }
+        };
+        builder.build().expect("invalid client params")
+    };
 );
 
 /// Alias of warp `FullPath`
