@@ -273,7 +273,7 @@ async fn proxy_request(request: reqwest::Request) -> Result<reqwest::Response, e
 pub mod test {
     use crate::{
         extract_request_data_filter, filtered_data_to_request, proxy_request, remove_relative_path,
-        reverse_proxy_filter, Request, CLIENT,
+        reverse_proxy_filter, Request,
     };
     use std::net::SocketAddr;
     use warp::http::StatusCode;
@@ -351,7 +351,8 @@ pub mod test {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
-    async fn test_full_reverse_proxy_filter_forward_response() {
+    #[tokio::test]
+    async fn full_reverse_proxy_filter_forward_response() {
         let address_str = "http://127.0.0.1:3030";
         let filter = warp::path!("relative_path" / ..).and(reverse_proxy_filter(
             "relative_path".to_string(),
@@ -377,16 +378,5 @@ pub mod test {
             .await;
 
         assert_eq!(response.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn full_reverse_proxy_filter_forward_response() {
-        test_full_reverse_proxy_filter_forward_response().await
-    }
-
-    #[tokio::test]
-    async fn test_other_client_is_used() {
-        CLIENT.set(reqwest::Client::new()).expect("client is set");
-        test_full_reverse_proxy_filter_forward_response().await;
     }
 }
