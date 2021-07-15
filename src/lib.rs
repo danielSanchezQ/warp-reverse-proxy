@@ -38,6 +38,17 @@ use warp::http::{HeaderMap, HeaderValue, Method as RequestMethod};
 use warp::hyper::body::Bytes;
 use warp::{Filter, Rejection};
 
+/// Reverse proxy internal client
+///
+/// It can be overridden if needed calling `OnceCell::set` as follows:
+/// # Examples
+/// ```
+/// use warp_reverse_proxy::CLIENT;
+/// use reqwest::Client;
+///
+/// let client = Client::builder().build().expect("client goes boom...");
+/// CLIENT.set(client).expect("client is set");
+/// ```
 pub static CLIENT: OnceCell<reqwest::Client> = OnceCell::new();
 
 /// Alias of warp `FullPath`
@@ -62,7 +73,8 @@ pub type Body = Bytes;
 /// It is the type that holds the request data extracted by the [`extract_request_data_filter`](fn.extract_request_data_filter.html) filter.
 pub type Request = (Uri, QueryParameters, Method, Headers, Body);
 
-/// Reverse proxy filter:
+/// Reverse proxy filter
+///
 /// Forwards the request to the desired location. It maps one to one, meaning
 /// that a request to `https://www.bar.foo/handle/this/path` forwarding to `https://www.other.location`
 /// will result in a request to `https://www.other.location/handle/this/path`.
@@ -111,8 +123,9 @@ pub fn extract_request_data_filter(
         .and(warp::body::bytes())
 }
 
-/// Build a request and send to the requested address. wraps the response into a
-/// warp::reply compatible type (`http::Response`)
+/// Build a request and send to the requested address.
+///
+/// Wraps the response into a `warp::reply` compatible type (`http::Response`)
 ///
 /// # Arguments
 ///
@@ -192,6 +205,7 @@ fn remove_relative_path(uri: &FullPath, base_path: String, proxy_address: String
 }
 
 /// Checker method to filter hop headers
+///
 /// Headers are checked using unicase to avoid case misfunctions
 fn is_hop_header(header_name: &str) -> bool {
     static HOP_HEADERS: Lazy<Vec<Ascii<&'static str>>> = Lazy::new(|| {
@@ -259,7 +273,7 @@ async fn proxy_request(request: reqwest::Request) -> Result<reqwest::Response, e
 pub mod test {
     use crate::{
         extract_request_data_filter, filtered_data_to_request, proxy_request, remove_relative_path,
-        reverse_proxy_filter, Request,
+        reverse_proxy_filter, Request, CLIENT,
     };
     use std::net::SocketAddr;
     use warp::http::StatusCode;
@@ -337,8 +351,7 @@ pub mod test {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
-    #[tokio::test]
-    async fn full_reverse_proxy_filter_forward_response() {
+    async fn test_full_reverse_proxy_filter_forward_response() {
         let address_str = "http://127.0.0.1:3030";
         let filter = warp::path!("relative_path" / ..).and(reverse_proxy_filter(
             "relative_path".to_string(),
@@ -364,5 +377,16 @@ pub mod test {
             .await;
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn full_reverse_proxy_filter_forward_response() {
+        test_full_reverse_proxy_filter_forward_response().await
+    }
+
+    #[tokio::test]
+    async fn test_other_client_is_used() {
+        CLIENT.set(reqwest::Client::new()).expect("client is set");
+        test_full_reverse_proxy_filter_forward_response().await;
     }
 }
