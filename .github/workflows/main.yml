@@ -52,6 +52,7 @@ jobs:
         continue-on-error: false
         with:
           command: test
+          args: -j 1
 
   lints:
     name: Rust lints
