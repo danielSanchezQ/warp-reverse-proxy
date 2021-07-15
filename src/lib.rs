@@ -30,7 +30,7 @@
 //! ```
 pub mod errors;
 
-use lazy_static::lazy_static;
+use once_cell::sync::{Lazy, OnceCell};
 use unicase::Ascii;
 use warp::filters::path::FullPath;
 use warp::http;
@@ -38,10 +38,7 @@ use warp::http::{HeaderMap, HeaderValue, Method as RequestMethod};
 use warp::hyper::body::Bytes;
 use warp::{Filter, Rejection};
 
-lazy_static!(
-    // Overlord client instance for all filters
-    static ref CLIENT: reqwest::Client = reqwest::Client::new();
-);
+pub static CLIENT: OnceCell<reqwest::Client> = OnceCell::new();
 
 /// Alias of warp `FullPath`
 pub type Uri = FullPath;
@@ -197,8 +194,8 @@ fn remove_relative_path(uri: &FullPath, base_path: String, proxy_address: String
 /// Checker method to filter hop headers
 /// Headers are checked using unicase to avoid case misfunctions
 fn is_hop_header(header_name: &str) -> bool {
-    lazy_static! {
-        static ref HOP_HEADERS: Vec<Ascii<&'static str>> = vec![
+    static HOP_HEADERS: Lazy<Vec<Ascii<&'static str>>> = Lazy::new(|| {
+        vec![
             Ascii::new("Connection"),
             Ascii::new("Keep-Alive"),
             Ascii::new("Proxy-Authenticate"),
@@ -207,8 +204,8 @@ fn is_hop_header(header_name: &str) -> bool {
             Ascii::new("Trailers"),
             Ascii::new("Transfer-Encoding"),
             Ascii::new("Upgrade"),
-        ];
-    }
+        ]
+    });
 
     HOP_HEADERS.iter().any(|h| h == &header_name)
 }
@@ -241,6 +238,7 @@ fn filtered_data_to_request(
     let headers = remove_hop_headers(&headers);
 
     CLIENT
+        .get_or_init(reqwest::Client::new)
         .request(method, &proxy_uri)
         .headers(headers)
         .body(body)
@@ -251,6 +249,7 @@ fn filtered_data_to_request(
 /// Build and send a request to the specified address and request data
 async fn proxy_request(request: reqwest::Request) -> Result<reqwest::Response, errors::Error> {
     CLIENT
+        .get_or_init(reqwest::Client::new)
         .execute(request)
         .await
         .map_err(errors::Error::Request)
