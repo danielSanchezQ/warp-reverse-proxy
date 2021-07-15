@@ -67,3 +67,21 @@ async fn main() {
     warp::serve(app).run(([0, 0, 0, 0], 3030)).await;
 }
 ```
+
+### Requests client initialization
+
+By default, a simple `reqwests::Client` is initialized and used.
+In case some specific client configuration need to be used it can be overridden:
+
+```rust
+use warp_reverse_proxy::{reverse_proxy_filter, CLIENT as PROXY_CLIENT};
+
+#[tokio::main]
+async fn main() {
+    let client = reqwest::Client::builder()
+        .default_headers(headers)
+        .build().expect("client goes boom...");
+    PROXY_CLIENT.set(client).expect("client couldn't be set");
+    ...
+}
+```

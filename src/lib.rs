@@ -30,7 +30,7 @@
 //! ```
 pub mod errors;
 
-use lazy_static::lazy_static;
+use once_cell::sync::{Lazy, OnceCell};
 use unicase::Ascii;
 use warp::filters::path::FullPath;
 use warp::http;
@@ -38,10 +38,18 @@ use warp::http::{HeaderMap, HeaderValue, Method as RequestMethod};
 use warp::hyper::body::Bytes;
 use warp::{Filter, Rejection};
 
-lazy_static!(
-    // Overlord client instance for all filters
-    static ref CLIENT: reqwest::Client = reqwest::Client::new();
-);
+/// Reverse proxy internal client
+///
+/// It can be overridden if needed calling `OnceCell::set` as follows:
+/// # Examples
+/// ```
+/// use warp_reverse_proxy::CLIENT;
+/// use reqwest::Client;
+///
+/// let client = Client::builder().build().expect("client goes boom...");
+/// CLIENT.set(client).expect("client is set");
+/// ```
+pub static CLIENT: OnceCell<reqwest::Client> = OnceCell::new();
 
 /// Alias of warp `FullPath`
 pub type Uri = FullPath;
@@ -65,7 +73,8 @@ pub type Body = Bytes;
 /// It is the type that holds the request data extracted by the [`extract_request_data_filter`](fn.extract_request_data_filter.html) filter.
 pub type Request = (Uri, QueryParameters, Method, Headers, Body);
 
-/// Reverse proxy filter:
+/// Reverse proxy filter
+///
 /// Forwards the request to the desired location. It maps one to one, meaning
 /// that a request to `https://www.bar.foo/handle/this/path` forwarding to `https://www.other.location`
 /// will result in a request to `https://www.other.location/handle/this/path`.
@@ -114,8 +123,9 @@ pub fn extract_request_data_filter(
         .and(warp::body::bytes())
 }
 
-/// Build a request and send to the requested address. wraps the response into a
-/// warp::reply compatible type (`http::Response`)
+/// Build a request and send to the requested address.
+///
+/// Wraps the response into a `warp::reply` compatible type (`http::Response`)
 ///
 /// # Arguments
 ///
@@ -195,10 +205,11 @@ fn remove_relative_path(uri: &FullPath, base_path: String, proxy_address: String
 }
 
 /// Checker method to filter hop headers
+///
 /// Headers are checked using unicase to avoid case misfunctions
 fn is_hop_header(header_name: &str) -> bool {
-    lazy_static! {
-        static ref HOP_HEADERS: Vec<Ascii<&'static str>> = vec![
+    static HOP_HEADERS: Lazy<Vec<Ascii<&'static str>>> = Lazy::new(|| {
+        vec![
             Ascii::new("Connection"),
             Ascii::new("Keep-Alive"),
             Ascii::new("Proxy-Authenticate"),
@@ -207,8 +218,8 @@ fn is_hop_header(header_name: &str) -> bool {
             Ascii::new("Trailers"),
             Ascii::new("Transfer-Encoding"),
             Ascii::new("Upgrade"),
-        ];
-    }
+        ]
+    });
 
     HOP_HEADERS.iter().any(|h| h == &header_name)
 }
@@ -241,6 +252,7 @@ fn filtered_data_to_request(
     let headers = remove_hop_headers(&headers);
 
     CLIENT
+        .get_or_init(reqwest::Client::new)
         .request(method, &proxy_uri)
         .headers(headers)
         .body(body)
@@ -251,6 +263,7 @@ fn filtered_data_to_request(
 /// Build and send a request to the specified address and request data
 async fn proxy_request(request: reqwest::Request) -> Result<reqwest::Response, errors::Error> {
     CLIENT
+        .get_or_init(reqwest::Client::new)
         .execute(request)
         .await
         .map_err(errors::Error::Request)
