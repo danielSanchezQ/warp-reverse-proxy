@@ -1,5 +1,8 @@
 # Changelog
 
+### v0.4.0 (2021-10-03)
+- [Added] Reqwests client configurable option through OnceCell
+
 ### v0.3.2 (2021-06-02)
 - [fixed] Missing usage of unique reqwest CLIENT
 - [fixed] Suppress breaking API warning until new breaking version is released
