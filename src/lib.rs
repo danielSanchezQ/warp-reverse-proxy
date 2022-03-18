@@ -31,6 +31,7 @@
 pub mod errors;
 
 use once_cell::sync::{Lazy, OnceCell};
+use reqwest::redirect::Policy;
 use unicase::Ascii;
 use warp::filters::path::FullPath;
 use warp::http;
@@ -252,7 +253,7 @@ fn filtered_data_to_request(
     let headers = remove_hop_headers(&headers);
 
     CLIENT
-        .get_or_init(reqwest::Client::new)
+        .get_or_init(default_reqwest_client)
         .request(method, &proxy_uri)
         .headers(headers)
         .body(body)
@@ -263,10 +264,20 @@ fn filtered_data_to_request(
 /// Build and send a request to the specified address and request data
 async fn proxy_request(request: reqwest::Request) -> Result<reqwest::Response, errors::Error> {
     CLIENT
-        .get_or_init(reqwest::Client::new)
+        .get_or_init(default_reqwest_client)
         .execute(request)
         .await
         .map_err(errors::Error::Request)
+}
+
+/// Build a default client with redirect policy set to none
+fn default_reqwest_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .redirect(Policy::none())
+        .build()
+        // we should panic here, it is enforce that the client is needed, and there is no error
+        // handling possible on function call, better to stop execution.
+        .expect("Default reqwest client couldn't build")
 }
 
 #[cfg(test)]
