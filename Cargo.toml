@@ -1,6 +1,6 @@
 [package]
 name = "warp-reverse-proxy"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["danielsanchezq <daniel.sanchez@iohk.io>"]
 edition = "2018"
 license-file = "LICENSE"
