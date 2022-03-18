@@ -10,8 +10,8 @@ desired address and replies back the remote address response.
 ### Add the library dependency
 ```toml
 [dependencies]
-warp = "0.3"
-warp-reverse-proxy = "0.3"
+warp = "0.5"
+warp-reverse-proxy = "0.5"
 ```
 
 ### Use it as simple as:
