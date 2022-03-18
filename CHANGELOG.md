@@ -1,5 +1,8 @@
 # Changelog
 
+### v0.5.0 (2022-03-18)
+- [Added] Make default requests client redirect policy `Policy::none`
+
 ### v0.4.0 (2021-10-03)
 - [Added] Reqwests client configurable option through OnceCell
 
