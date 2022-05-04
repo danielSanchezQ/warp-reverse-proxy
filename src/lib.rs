@@ -168,10 +168,40 @@ pub async fn proxy_to_and_forward_response(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<http::Response<Bytes>, Rejection> {
+    proxy_to_and_forward_response_use_client(
+        proxy_address,
+        base_path,
+        uri,
+        params,
+        method,
+        headers,
+        body,
+        CLIENT.get_or_init(default_reqwest_client),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn proxy_to_and_forward_response_use_client(
+    proxy_address: String,
+    base_path: String,
+    uri: FullPath,
+    params: QueryParameters,
+    method: Method,
+    headers: HeaderMap,
+    body: Bytes,
+    client: &reqwest::Client,
+) -> Result<http::Response<Bytes>, Rejection> {
     let proxy_uri = remove_relative_path(&uri, base_path, proxy_address);
-    let request = filtered_data_to_request(proxy_uri, (uri, params, method, headers, body))
+    let request = filtered_data_to_request_use_client(
+        proxy_uri,
+        (uri, params, method, headers, body),
+        client,
+    )
+    .map_err(warp::reject::custom)?;
+    let response = proxy_request_use_client(request, client)
+        .await
         .map_err(warp::reject::custom)?;
-    let response = proxy_request(request).await.map_err(warp::reject::custom)?;
     response_to_reply(response)
         .await
         .map_err(warp::reject::custom)
@@ -242,6 +272,18 @@ fn filtered_data_to_request(
     proxy_address: String,
     request: Request,
 ) -> Result<reqwest::Request, errors::Error> {
+    filtered_data_to_request_use_client(
+        proxy_address,
+        request,
+        CLIENT.get_or_init(default_reqwest_client),
+    )
+}
+
+fn filtered_data_to_request_use_client(
+    proxy_address: String,
+    request: Request,
+    client: &reqwest::Client,
+) -> Result<reqwest::Request, errors::Error> {
     let (_uri, params, method, headers, body) = request;
 
     let proxy_uri = if let Some(params) = params {
@@ -252,8 +294,7 @@ fn filtered_data_to_request(
 
     let headers = remove_hop_headers(&headers);
 
-    CLIENT
-        .get_or_init(default_reqwest_client)
+    client
         .request(method, &proxy_uri)
         .headers(headers)
         .body(body)
@@ -263,8 +304,15 @@ fn filtered_data_to_request(
 
 /// Build and send a request to the specified address and request data
 async fn proxy_request(request: reqwest::Request) -> Result<reqwest::Response, errors::Error> {
-    CLIENT
-        .get_or_init(default_reqwest_client)
+    proxy_request_use_client(request, CLIENT.get_or_init(default_reqwest_client)).await
+}
+
+/// Build and send a request to the specified address and request data
+async fn proxy_request_use_client(
+    request: reqwest::Request,
+    client: &reqwest::Client,
+) -> Result<reqwest::Response, errors::Error> {
+    client
         .execute(request)
         .await
         .map_err(errors::Error::Request)
