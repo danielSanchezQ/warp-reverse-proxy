@@ -35,7 +35,7 @@ use reqwest::redirect::Policy;
 use unicase::Ascii;
 use warp::filters::path::FullPath;
 use warp::http;
-use warp::http::{HeaderMap, HeaderValue, Method as RequestMethod};
+use warp::http::{HeaderMap, Method as RequestMethod};
 use warp::hyper::body::Bytes;
 use warp::{Filter, Rejection};
 
@@ -64,7 +64,7 @@ pub type QueryParameters = Option<String>;
 pub type Method = RequestMethod;
 
 /// Alias of warp `HeaderMap`
-pub type Headers = HeaderMap<HeaderValue>;
+pub type Headers = HeaderMap;
 
 /// Alias of request body bytes
 pub type Body = Bytes;
