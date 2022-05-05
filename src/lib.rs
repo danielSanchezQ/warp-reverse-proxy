@@ -162,11 +162,11 @@ pub fn extract_request_data_filter(
 pub async fn proxy_to_and_forward_response(
     proxy_address: String,
     base_path: String,
-    uri: FullPath,
+    uri: Uri,
     params: QueryParameters,
     method: Method,
-    headers: HeaderMap,
-    body: Bytes,
+    headers: Headers,
+    body: Body,
 ) -> Result<http::Response<Bytes>, Rejection> {
     proxy_to_and_forward_response_use_client(
         proxy_address,
@@ -181,15 +181,21 @@ pub async fn proxy_to_and_forward_response(
     .await
 }
 
+pub fn with_client(
+    client: &reqwest::Client,
+) -> impl Filter<Extract = (&reqwest::Client,), Error = std::convert::Infallible> + Clone {
+    warp::any().map(move || client)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn proxy_to_and_forward_response_use_client(
     proxy_address: String,
     base_path: String,
-    uri: FullPath,
+    uri: Uri,
     params: QueryParameters,
     method: Method,
-    headers: HeaderMap,
-    body: Bytes,
+    headers: Headers,
+    body: Body,
     client: &reqwest::Client,
 ) -> Result<http::Response<Bytes>, Rejection> {
     let proxy_uri = remove_relative_path(&uri, base_path, proxy_address);
@@ -268,17 +274,7 @@ fn remove_hop_headers(headers: &HeaderMap<HeaderValue>) -> HeaderMap<HeaderValue
         .collect()
 }
 
-fn filtered_data_to_request(
-    proxy_address: String,
-    request: Request,
-) -> Result<reqwest::Request, errors::Error> {
-    filtered_data_to_request_use_client(
-        proxy_address,
-        request,
-        CLIENT.get_or_init(default_reqwest_client),
-    )
-}
-
+/// Build and send a request to the specified address and request data by use specified client
 fn filtered_data_to_request_use_client(
     proxy_address: String,
     request: Request,
@@ -302,12 +298,7 @@ fn filtered_data_to_request_use_client(
         .map_err(errors::Error::Request)
 }
 
-/// Build and send a request to the specified address and request data
-async fn proxy_request(request: reqwest::Request) -> Result<reqwest::Response, errors::Error> {
-    proxy_request_use_client(request, CLIENT.get_or_init(default_reqwest_client)).await
-}
-
-/// Build and send a request to the specified address and request data
+/// Build and send a request to the specified address and request data by use specified client
 async fn proxy_request_use_client(
     request: reqwest::Request,
     client: &reqwest::Client,
@@ -326,6 +317,23 @@ fn default_reqwest_client() -> reqwest::Client {
         // we should panic here, it is enforce that the client is needed, and there is no error
         // handling possible on function call, better to stop execution.
         .expect("Default reqwest client couldn't build")
+}
+
+#[cfg(test)]
+async fn proxy_request(request: reqwest::Request) -> Result<reqwest::Response, errors::Error> {
+    proxy_request_use_client(request, CLIENT.get_or_init(default_reqwest_client)).await
+}
+
+#[cfg(test)]
+fn filtered_data_to_request(
+    proxy_address: String,
+    request: Request,
+) -> Result<reqwest::Request, errors::Error> {
+    filtered_data_to_request_use_client(
+        proxy_address,
+        request,
+        CLIENT.get_or_init(default_reqwest_client),
+    )
 }
 
 #[cfg(test)]
