@@ -37,6 +37,7 @@ use warp::filters::path::FullPath;
 use warp::http;
 use warp::http::{HeaderMap, HeaderValue, Method as RequestMethod};
 use warp::hyper::body::Bytes;
+use warp::hyper::Body;
 use warp::{Filter, Rejection};
 
 /// Reverse proxy internal client
@@ -66,13 +67,10 @@ pub type Method = RequestMethod;
 /// Alias of warp `HeaderMap`
 pub type Headers = HeaderMap;
 
-/// Alias of request body bytes
-pub type Body = Bytes;
-
 /// Wrapper around a request data tuple.
 ///
 /// It is the type that holds the request data extracted by the [`extract_request_data_filter`](fn.extract_request_data_filter.html) filter.
-pub type Request = (Uri, QueryParameters, Method, Headers, Body);
+pub type Request = (Uri, QueryParameters, Method, Headers, Bytes);
 
 /// Reverse proxy filter
 ///
@@ -94,7 +92,7 @@ pub type Request = (Uri, QueryParameters, Method, Headers, Body);
 pub fn reverse_proxy_filter(
     base_path: String,
     proxy_address: String,
-) -> impl Filter<Extract = (http::Response<Bytes>,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (http::Response<Body>,), Error = Rejection> + Clone {
     let proxy_address = warp::any().map(move || proxy_address.clone());
     let base_path = warp::any().map(move || base_path.clone());
     let data_filter = extract_request_data_filter();
@@ -167,7 +165,7 @@ pub async fn proxy_to_and_forward_response(
     method: Method,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<http::Response<Bytes>, Rejection> {
+) -> Result<http::Response<Body>, Rejection> {
     let proxy_uri = remove_relative_path(&uri, base_path, proxy_address);
     let request = filtered_data_to_request(proxy_uri, (uri, params, method, headers, body))
         .map_err(warp::reject::custom)?;
@@ -180,14 +178,16 @@ pub async fn proxy_to_and_forward_response(
 /// Converts a reqwest response into a http::Response
 async fn response_to_reply(
     response: reqwest::Response,
-) -> Result<http::Response<Bytes>, errors::Error> {
+) -> Result<http::Response<Body>, errors::Error> {
     let mut builder = http::Response::builder();
     for (k, v) in remove_hop_headers(response.headers()).iter() {
         builder = builder.header(k, v);
     }
+    let status = response.status();
+    let body = Body::wrap_stream(response.bytes_stream());
     builder
-        .status(response.status())
-        .body(response.bytes().await.map_err(errors::Error::Request)?)
+        .status(status)
+        .body(body)
         .map_err(errors::Error::HTTP)
 }
 
