@@ -3,10 +3,10 @@
 //!
 //!
 //! ```no_run
-//! use warp::{hyper::body::Bytes, Filter, Rejection, Reply, http::Response};
+//! use warp::{hyper::Body, Filter, Rejection, Reply, http::Response};
 //! use warp_reverse_proxy::reverse_proxy_filter;
 //!
-//! async fn log_response(response: Response<Bytes>) -> Result<impl Reply, Rejection> {
+//! async fn log_response(response: Response<Body>) -> Result<impl Reply, Rejection> {
 //!     println!("{:?}", response);
 //!     Ok(response)
 //! }
@@ -149,6 +149,14 @@ pub fn extract_request_data_filter(
 /// provides the `(Uri, QueryParameters, Method, Headers, Body)` needed for calling this method. But the `proxy_address`
 /// and the `base_path` arguments need to be provided too.
 /// ```rust, ignore
+/// use warp::{Filter, hyper::Body, Reply, Rejection, hyper::Response};
+/// use warp_reverse_proxy::{extract_request_data_filter, proxy_to_and_forward_response};
+///
+/// async fn log_response(response: Response<Body>) -> Result<impl Reply, Rejection> {
+///     println!("{:?}", response);
+///     Ok(response)
+/// }
+///
 /// let request_filter = extract_request_data_filter();
 /// let app = warp::path!("hello" / String)
 ///     .map(|port| (format!("http://127.0.0.1:{}/", port), "".to_string()))
