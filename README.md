@@ -11,15 +11,15 @@ desired address and replies back the remote address response.
 ```toml
 [dependencies]
 warp = "0.3"
-warp-reverse-proxy = "0.5"
+warp-reverse-proxy = "1"
 ```
 
 ### Use it as simple as:
 ```rust
-use warp::{hyper::body::Bytes, Filter, Rejection, Reply};
+use warp::{hyper::Body, Filter, Rejection, Reply, http::Response};
 use warp_reverse_proxy::reverse_proxy_filter;
 
-async fn log_response(response: http::Response<Bytes>) -> Result<impl Reply, Rejection> {
+async fn log_response(response: Response<Body>) -> Result<impl Reply, Rejection> {
     println!("{:?}", response);
     Ok(response)
 }
@@ -27,16 +27,13 @@ async fn log_response(response: http::Response<Bytes>) -> Result<impl Reply, Rej
 #[tokio::main]
 async fn main() {
     let hello = warp::path!("hello" / String).map(|name| format!("Hello, {}!", name));
-
     // // spawn base server
     tokio::spawn(warp::serve(hello).run(([0, 0, 0, 0], 8080)));
-
     // Forward request to localhost in other port
     let app = warp::path!("hello" / ..).and(
         reverse_proxy_filter("".to_string(), "http://127.0.0.1:8080/".to_string())
             .and_then(log_response),
     );
-
     // spawn proxy server
     warp::serve(app).run(([0, 0, 0, 0], 3030)).await;
 }
