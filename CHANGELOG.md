@@ -1,5 +1,9 @@
 # Changelog
 
+### v1.0.0 (2022-12-19)
+- [Added] Use streaming instead of waiting for forwarding request to reply
+- [Fixed] Http error clippy warning
+
 ### v0.5.0 (2022-03-18)
 - [Added] Make default requests client redirect policy `Policy::none`
 

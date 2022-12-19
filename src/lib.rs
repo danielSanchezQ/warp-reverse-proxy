@@ -196,7 +196,7 @@ async fn response_to_reply(
     builder
         .status(status)
         .body(body)
-        .map_err(errors::Error::HTTP)
+        .map_err(errors::Error::Http)
 }
 
 fn remove_relative_path(uri: &FullPath, base_path: String, proxy_address: String) -> String {
@@ -262,7 +262,7 @@ fn filtered_data_to_request(
 
     CLIENT
         .get_or_init(default_reqwest_client)
-        .request(method, &proxy_uri)
+        .request(method, proxy_uri)
         .headers(headers)
         .body(body)
         .build()
