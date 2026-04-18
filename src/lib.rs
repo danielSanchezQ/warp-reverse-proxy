@@ -7,7 +7,7 @@
 //! use warp_reverse_proxy::{reverse_proxy_filter, ProxyResponse};
 //!
 //! async fn log_response(response: ProxyResponse) -> Result<impl Reply, Rejection> {
-//!     println!("{:?}", response);
+//!     println!("Response received");
 //!     Ok(response)
 //! }
 //!
@@ -34,22 +34,15 @@ use once_cell::sync::{Lazy, OnceCell};
 use reqwest::redirect::Policy;
 use unicase::Ascii;
 use warp::filters::path::FullPath;
-use warp::http;
 use warp::http::{HeaderMap, HeaderValue, Method as RequestMethod};
 use warp::hyper::body::Bytes;
 use warp::{Filter, Rejection};
 
-#[derive(Debug)]
-pub struct ProxyResponse(http::Response<Bytes>);
+pub struct ProxyResponse(warp::reply::Response);
 
 impl warp::Reply for ProxyResponse {
     fn into_response(self) -> warp::reply::Response {
-        let (parts, body) = self.0.into_parts();
-        let mut response = warp::reply::Response::new(body.into());
-        *response.status_mut() = parts.status;
-        *response.headers_mut() = parts.headers;
-        *response.version_mut() = parts.version;
-        response
+        self.0
     }
 }
 
@@ -142,8 +135,7 @@ pub fn extract_request_data_filter(
 ///
 /// # Arguments
 ///
-/// * `proxy_address` - A string containing the base proxy address where the request
-/// will be forwarded to.
+/// * `proxy_address` - A string containing the base proxy address where the request will be forwarded to.
 ///
 /// * `base_path` - A string with the prepended sub-path to be stripped from the request uri path.
 ///
@@ -188,7 +180,7 @@ pub async fn proxy_to_and_forward_response(
     method: Method,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<http::Response<Bytes>, Rejection> {
+) -> Result<warp::reply::Response, Rejection> {
     let proxy_uri = remove_relative_path(&uri, base_path, proxy_address);
     let request = filtered_data_to_request(proxy_uri, (uri, params, method, headers, body))
         .map_err(warp::reject::custom)?;
@@ -198,11 +190,11 @@ pub async fn proxy_to_and_forward_response(
         .map_err(warp::reject::custom)
 }
 
-/// Converts a reqwest response into a http::Response
+/// Converts a reqwest response into a warp::reply::Response
 async fn response_to_reply(
     response: reqwest::Response,
-) -> Result<http::Response<Bytes>, errors::Error> {
-    let mut builder = http::Response::builder();
+) -> Result<warp::reply::Response, errors::Error> {
+    let mut builder = warp::http::Response::builder();
     for (k, v) in remove_hop_headers(response.headers()).iter() {
         builder = builder.header(k, v);
     }
@@ -210,10 +202,18 @@ async fn response_to_reply(
 
     let body = response.bytes().await.map_err(errors::Error::Request)?;
 
-    builder
+    let http_response = builder
         .status(status)
         .body(body)
-        .map_err(errors::Error::Http)
+        .map_err(errors::Error::Http)?;
+
+    let (parts, body) = http_response.into_parts();
+    let mut warp_response = warp::reply::Response::new(body.into());
+    *warp_response.status_mut() = parts.status;
+    *warp_response.headers_mut() = parts.headers;
+    *warp_response.version_mut() = parts.version;
+
+    Ok(warp_response)
 }
 
 fn remove_relative_path(uri: &FullPath, base_path: String, proxy_address: String) -> String {
