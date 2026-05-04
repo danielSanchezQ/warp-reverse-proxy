@@ -3,10 +3,10 @@
 //!
 //!
 //! ```no_run
-//! use warp::{hyper::Body, Filter, Rejection, Reply, http::Response};
+//! use warp::{Filter, Rejection, Reply, reply::Response};
 //! use warp_reverse_proxy::reverse_proxy_filter;
 //!
-//! async fn log_response(response: Response<Body>) -> Result<impl Reply, Rejection> {
+//! async fn log_response(response: Response) -> Result<impl Reply, Rejection> {
 //!     println!("{:?}", response);
 //!     Ok(response)
 //! }
@@ -30,15 +30,18 @@
 //! ```
 pub mod errors;
 
+use futures_util::{stream, StreamExt};
+use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, StreamBody};
+use hyper::body::{Bytes, Frame};
 use once_cell::sync::{Lazy, OnceCell};
 use reqwest::redirect::Policy;
 use unicase::Ascii;
 use warp::filters::path::FullPath;
 use warp::http;
 use warp::http::{HeaderMap, HeaderValue, Method as RequestMethod};
-use warp::hyper::body::Bytes;
-use warp::hyper::Body;
 use warp::{Filter, Rejection};
+use futures_util::TryStreamExt;
 
 /// Reverse proxy internal client
 ///
@@ -81,7 +84,7 @@ pub type Request = (Uri, QueryParameters, Method, Headers, Bytes);
 /// # Arguments
 ///
 /// * `base_path` - A string with the initial relative path of the endpoint.
-/// For example a `foo/` applied for an endpoint `foo/bar/` will result on a proxy to `bar/` (hence `/foo` is removed)
+///   For example a `foo/` applied for an endpoint `foo/bar/` will result on a proxy to `bar/` (hence `/foo` is removed)
 ///
 /// * `proxy_address` - Base proxy address to forward request.
 /// # Examples
@@ -92,7 +95,7 @@ pub type Request = (Uri, QueryParameters, Method, Headers, Bytes);
 pub fn reverse_proxy_filter(
     base_path: String,
     proxy_address: String,
-) -> impl Filter<Extract = (http::Response<Body>,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (warp::reply::Response,), Error = Rejection> + Clone {
     let proxy_address = warp::any().map(move || proxy_address.clone());
     let base_path = warp::any().map(move || base_path.clone());
     let data_filter = extract_request_data_filter();
@@ -129,7 +132,7 @@ pub fn extract_request_data_filter(
 /// # Arguments
 ///
 /// * `proxy_address` - A string containing the base proxy address where the request
-/// will be forwarded to.
+///   will be forwarded to.
 ///
 /// * `base_path` - A string with the prepended sub-path to be stripped from the request uri path.
 ///
@@ -149,10 +152,10 @@ pub fn extract_request_data_filter(
 /// provides the `(Uri, QueryParameters, Method, Headers, Body)` needed for calling this method. But the `proxy_address`
 /// and the `base_path` arguments need to be provided too.
 /// ```rust, ignore
-/// use warp::{Filter, hyper::Body, Reply, Rejection, hyper::Response};
+/// use warp::{Filter, Reply, Rejection, reply::Response};
 /// use warp_reverse_proxy::{extract_request_data_filter, proxy_to_and_forward_response};
 ///
-/// async fn log_response(response: Response<Body>) -> Result<impl Reply, Rejection> {
+/// async fn log_response(response: Response) -> Result<impl Reply, Rejection> {
 ///     println!("{:?}", response);
 ///     Ok(response)
 /// }
@@ -173,7 +176,7 @@ pub async fn proxy_to_and_forward_response(
     method: Method,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<http::Response<Body>, Rejection> {
+) -> Result<warp::reply::Response, Rejection> {
     let proxy_uri = remove_relative_path(&uri, base_path, proxy_address);
     let request = filtered_data_to_request(proxy_uri, (uri, params, method, headers, body))
         .map_err(warp::reject::custom)?;
@@ -183,16 +186,41 @@ pub async fn proxy_to_and_forward_response(
         .map_err(warp::reject::custom)
 }
 
-/// Converts a reqwest response into a http::Response
+/// Converts a reqwest response into a streaming warp response.
 async fn response_to_reply(
     response: reqwest::Response,
-) -> Result<http::Response<Body>, errors::Error> {
+) -> Result<warp::reply::Response, errors::Error> {
     let mut builder = http::Response::builder();
     for (k, v) in remove_hop_headers(response.headers()).iter() {
         builder = builder.header(k, v);
     }
     let status = response.status();
-    let body = Body::wrap_stream(response.bytes_stream());
+
+    // Drive the upstream body chunk-by-chunk without buffering.
+    // Upstream errors terminate the stream rather than propagating: warp's body
+    // error type (`warp::Error`) has no public constructor, so there is no safe
+    // external path to inject an upstream error into the stream. Terminating
+    // cleanly is preferable to buffering the entire response (OOM risk).
+    let byte_stream = response.bytes_stream();
+
+    // Build BoxBody<Bytes, warp::Error>:
+    // - Wrap each chunk in a data Frame with Infallible error (stream ends on upstream error)
+    // - Convert Infallible → warp::Error via the public From impl
+    let box_body: BoxBody<Bytes, warp::Error> = StreamBody::new(
+        byte_stream.map(|b| Result::<_, std::convert::Infallible>::Ok(Frame::data(b))),
+    )
+    .map_err(|e: std::convert::Infallible| -> warp::Error { e.into() })
+    .boxed();
+
+    // SAFETY: `warp::body::Body` is a private newtype `Body(BoxBody<Bytes, warp::Error>)`.
+    // Both types are 16 bytes (a single fat pointer) and share the same memory layout.
+    // The vtable points to the correct Body implementation; only the newtype wrapper differs.
+    // warp 0.4 provides no public streaming body constructor, making this transmute the
+    // only way to avoid buffering full upstream responses into memory.
+    // Type inference resolves the target as warp::bodyt::Body without naming the private type.
+    #[allow(unsafe_code)]
+    let body = unsafe { std::mem::transmute(box_body) };
+
     builder
         .status(status)
         .body(body)
