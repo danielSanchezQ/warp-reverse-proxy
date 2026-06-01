@@ -1,6 +1,6 @@
 [package]
 name = "warp-reverse-proxy"
-version = "1.0.0"
+version = "2.0.0"
 authors = ["danielsanchezq <sanchez.quiros.daniel@gmail.com>"]
 edition = "2018"
 license-file = "LICENSE"
@@ -15,18 +15,19 @@ exclude = [
 ]
 
 [dependencies]
-hyper = "1.1"
-once_cell = "1.16"
-reqwest = { version = "0.11", default-features = false, features = ["stream"] }
-thiserror = "1.0"
-unicase = "2.6"
-warp = { version = "0.3", default-features = false }
+hyper = "1.9"
+once_cell = "1.21"
+reqwest = { version = "0.13", default-features = false, features = ["stream"] }
+thiserror = "2.0"
+unicase = "2.9"
+warp = { version = "0.4.3", default-features = false }
 
 [dev-dependencies]
 bytes = "1.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+warp = { version = "0.4.3", features = ["server", "test"] }
 
 [features]
 default = ["default-tls"]
 default-tls = ["reqwest/default-tls"]
-rustls-tls = ["reqwest/rustls-tls"]
+rustls-tls = ["reqwest/rustls"]

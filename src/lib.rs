@@ -3,10 +3,10 @@
 //!
 //!
 //! ```no_run
-//! use warp::{hyper::Body, Filter, Rejection, Reply, http::Response};
+//! use warp::{Filter, Rejection, Reply, reply::Response};
 //! use warp_reverse_proxy::reverse_proxy_filter;
 //!
-//! async fn log_response(response: Response<Body>) -> Result<impl Reply, Rejection> {
+//! async fn log_response(response: Response) -> Result<impl Reply, Rejection> {
 //!     println!("{:?}", response);
 //!     Ok(response)
 //! }
@@ -30,14 +30,13 @@
 //! ```
 pub mod errors;
 
+use hyper::body::Bytes;
 use once_cell::sync::{Lazy, OnceCell};
 use reqwest::redirect::Policy;
 use unicase::Ascii;
 use warp::filters::path::FullPath;
-use warp::http;
 use warp::http::{HeaderMap, HeaderValue, Method as RequestMethod};
-use warp::hyper::body::Bytes;
-use warp::hyper::Body;
+use warp::{reply, Reply};
 use warp::{Filter, Rejection};
 
 /// Reverse proxy internal client
@@ -81,7 +80,7 @@ pub type Request = (Uri, QueryParameters, Method, Headers, Bytes);
 /// # Arguments
 ///
 /// * `base_path` - A string with the initial relative path of the endpoint.
-/// For example a `foo/` applied for an endpoint `foo/bar/` will result on a proxy to `bar/` (hence `/foo` is removed)
+///   For example a `foo/` applied for an endpoint `foo/bar/` will result on a proxy to `bar/` (hence `/foo` is removed)
 ///
 /// * `proxy_address` - Base proxy address to forward request.
 /// # Examples
@@ -92,7 +91,7 @@ pub type Request = (Uri, QueryParameters, Method, Headers, Bytes);
 pub fn reverse_proxy_filter(
     base_path: String,
     proxy_address: String,
-) -> impl Filter<Extract = (http::Response<Body>,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (warp::reply::Response,), Error = Rejection> + Clone {
     let proxy_address = warp::any().map(move || proxy_address.clone());
     let base_path = warp::any().map(move || base_path.clone());
     let data_filter = extract_request_data_filter();
@@ -129,7 +128,7 @@ pub fn extract_request_data_filter(
 /// # Arguments
 ///
 /// * `proxy_address` - A string containing the base proxy address where the request
-/// will be forwarded to.
+///   will be forwarded to.
 ///
 /// * `base_path` - A string with the prepended sub-path to be stripped from the request uri path.
 ///
@@ -149,10 +148,10 @@ pub fn extract_request_data_filter(
 /// provides the `(Uri, QueryParameters, Method, Headers, Body)` needed for calling this method. But the `proxy_address`
 /// and the `base_path` arguments need to be provided too.
 /// ```rust, ignore
-/// use warp::{Filter, hyper::Body, Reply, Rejection, hyper::Response};
+/// use warp::{Filter, Reply, Rejection, reply::Response};
 /// use warp_reverse_proxy::{extract_request_data_filter, proxy_to_and_forward_response};
 ///
-/// async fn log_response(response: Response<Body>) -> Result<impl Reply, Rejection> {
+/// async fn log_response(response: Response) -> Result<impl Reply, Rejection> {
 ///     println!("{:?}", response);
 ///     Ok(response)
 /// }
@@ -173,7 +172,7 @@ pub async fn proxy_to_and_forward_response(
     method: Method,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<http::Response<Body>, Rejection> {
+) -> Result<warp::reply::Response, Rejection> {
     let proxy_uri = remove_relative_path(&uri, base_path, proxy_address);
     let request = filtered_data_to_request(proxy_uri, (uri, params, method, headers, body))
         .map_err(warp::reject::custom)?;
@@ -183,20 +182,21 @@ pub async fn proxy_to_and_forward_response(
         .map_err(warp::reject::custom)
 }
 
-/// Converts a reqwest response into a http::Response
+/// Converts a reqwest response into a streaming warp response.
 async fn response_to_reply(
     response: reqwest::Response,
-) -> Result<http::Response<Body>, errors::Error> {
-    let mut builder = http::Response::builder();
-    for (k, v) in remove_hop_headers(response.headers()).iter() {
-        builder = builder.header(k, v);
-    }
+) -> Result<warp::reply::Response, errors::Error> {
     let status = response.status();
-    let body = Body::wrap_stream(response.bytes_stream());
-    builder
-        .status(status)
-        .body(body)
-        .map_err(errors::Error::Http)
+    let headers = response.headers().clone();
+    let mut reply = reply::stream(response.bytes_stream()).into_response();
+    *reply.status_mut() = status;
+    for (k, v) in remove_hop_headers(headers).into_iter() {
+        reply.headers_mut().insert(
+            k.expect("This is previously filters out in remove hop headers call"),
+            v,
+        );
+    }
+    Ok(reply)
 }
 
 fn remove_relative_path(uri: &FullPath, base_path: String, proxy_address: String) -> String {
@@ -233,12 +233,12 @@ fn is_hop_header(header_name: &str) -> bool {
     HOP_HEADERS.iter().any(|h| h == &header_name)
 }
 
-fn remove_hop_headers(headers: &HeaderMap<HeaderValue>) -> HeaderMap<HeaderValue> {
+fn remove_hop_headers(headers: HeaderMap<HeaderValue>) -> HeaderMap<HeaderValue> {
     headers
-        .iter()
+        .into_iter()
         .filter_map(|(k, v)| {
-            if !is_hop_header(k.as_str()) {
-                Some((k.clone(), v.clone()))
+            if matches!(k, Some(ref k) if !is_hop_header(k.as_str())) {
+                Some((k.unwrap(), v))
             } else {
                 None
             }
@@ -258,7 +258,7 @@ fn filtered_data_to_request(
         proxy_address
     };
 
-    let headers = remove_hop_headers(&headers);
+    let headers = remove_hop_headers(headers);
 
     CLIENT
         .get_or_init(default_reqwest_client)
