@@ -30,18 +30,14 @@
 //! ```
 pub mod errors;
 
-use futures_util::{stream, StreamExt};
-use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, StreamBody};
-use hyper::body::{Bytes, Frame};
+use hyper::body::Bytes;
 use once_cell::sync::{Lazy, OnceCell};
 use reqwest::redirect::Policy;
 use unicase::Ascii;
 use warp::filters::path::FullPath;
-use warp::http;
 use warp::http::{HeaderMap, HeaderValue, Method as RequestMethod};
+use warp::{reply, Reply};
 use warp::{Filter, Rejection};
-use futures_util::TryStreamExt;
 
 /// Reverse proxy internal client
 ///
@@ -190,41 +186,17 @@ pub async fn proxy_to_and_forward_response(
 async fn response_to_reply(
     response: reqwest::Response,
 ) -> Result<warp::reply::Response, errors::Error> {
-    let mut builder = http::Response::builder();
-    for (k, v) in remove_hop_headers(response.headers()).iter() {
-        builder = builder.header(k, v);
-    }
     let status = response.status();
-
-    // Drive the upstream body chunk-by-chunk without buffering.
-    // Upstream errors terminate the stream rather than propagating: warp's body
-    // error type (`warp::Error`) has no public constructor, so there is no safe
-    // external path to inject an upstream error into the stream. Terminating
-    // cleanly is preferable to buffering the entire response (OOM risk).
-    let byte_stream = response.bytes_stream();
-
-    // Build BoxBody<Bytes, warp::Error>:
-    // - Wrap each chunk in a data Frame with Infallible error (stream ends on upstream error)
-    // - Convert Infallible → warp::Error via the public From impl
-    let box_body: BoxBody<Bytes, warp::Error> = StreamBody::new(
-        byte_stream.map(|b| Result::<_, std::convert::Infallible>::Ok(Frame::data(b))),
-    )
-    .map_err(|e: std::convert::Infallible| -> warp::Error { e.into() })
-    .boxed();
-
-    // SAFETY: `warp::body::Body` is a private newtype `Body(BoxBody<Bytes, warp::Error>)`.
-    // Both types are 16 bytes (a single fat pointer) and share the same memory layout.
-    // The vtable points to the correct Body implementation; only the newtype wrapper differs.
-    // warp 0.4 provides no public streaming body constructor, making this transmute the
-    // only way to avoid buffering full upstream responses into memory.
-    // Type inference resolves the target as warp::bodyt::Body without naming the private type.
-    #[allow(unsafe_code)]
-    let body = unsafe { std::mem::transmute(box_body) };
-
-    builder
-        .status(status)
-        .body(body)
-        .map_err(errors::Error::Http)
+    let headers = response.headers().clone();
+    let mut reply = reply::stream(response.bytes_stream()).into_response();
+    *reply.status_mut() = status;
+    for (k, v) in remove_hop_headers(headers).into_iter() {
+        reply.headers_mut().insert(
+            k.expect("This is previously filters out in remove hop headers call"),
+            v,
+        );
+    }
+    Ok(reply)
 }
 
 fn remove_relative_path(uri: &FullPath, base_path: String, proxy_address: String) -> String {
@@ -261,12 +233,12 @@ fn is_hop_header(header_name: &str) -> bool {
     HOP_HEADERS.iter().any(|h| h == &header_name)
 }
 
-fn remove_hop_headers(headers: &HeaderMap<HeaderValue>) -> HeaderMap<HeaderValue> {
+fn remove_hop_headers(headers: HeaderMap<HeaderValue>) -> HeaderMap<HeaderValue> {
     headers
-        .iter()
+        .into_iter()
         .filter_map(|(k, v)| {
-            if !is_hop_header(k.as_str()) {
-                Some((k.clone(), v.clone()))
+            if matches!(k, Some(ref k) if !is_hop_header(k.as_str())) {
+                Some((k.unwrap(), v))
             } else {
                 None
             }
@@ -286,7 +258,7 @@ fn filtered_data_to_request(
         proxy_address
     };
 
-    let headers = remove_hop_headers(&headers);
+    let headers = remove_hop_headers(headers);
 
     CLIENT
         .get_or_init(default_reqwest_client)
